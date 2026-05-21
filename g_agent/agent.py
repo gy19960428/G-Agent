@@ -132,8 +132,8 @@ class Agent:
                     llm_sessions += [{"mixin_cfg": cfg}]
                 elif c := resolve_client(k):
                     llm_sessions += [c]
-            except:
-                pass
+            except Exception as e:
+                print(f"[load_llm] skip {k}: {e!r}")
         for i, s in enumerate(llm_sessions):
             if isinstance(s, dict) and "mixin_cfg" in s:
                 try:
