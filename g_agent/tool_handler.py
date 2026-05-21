@@ -36,6 +36,11 @@ class _ToolHandlerModule(_types.ModuleType):
 _sys.modules[__name__].__class__ = _ToolHandlerModule
 
 
+# _inline_eval 用 contextlib.chdir，chdir 是进程级状态；多线程并发执行会相互踩 cwd。
+# 加进程级 RLock 串行化 chdir 段，保证同一时刻只有一个 inline_eval 在改 cwd。
+_INLINE_EVAL_LOCK = threading.RLock()
+
+
 class ToolHandler(BaseHandler):
     '''G-Agent 工具库，包含多种工具的实现。工具函数自动加上了 do_ 前缀。实际工具名没有前缀。'''
     def __init__(self, parent, last_history=None, cwd='./temp'):
@@ -58,16 +63,17 @@ class ToolHandler(BaseHandler):
     def _inline_eval(self, code, cwd, ns):
         """在 cwd 中执行 inline Python：先 eval；SyntaxError 时改 exec 并取 ns['_r']。
         异常被吞为 'Error: ...' 字符串返回（与历史行为一致）。
-        使用 contextlib.chdir 保证异常路径下 cwd 也会被还原；注意 chdir 全局影响进程，调用方需保证串行。"""
-        with contextlib.chdir(cwd):
-            try:
+        chdir 是进程级状态，用 _INLINE_EVAL_LOCK 串行化避免多线程并发时 cwd 互踩。"""
+        with _INLINE_EVAL_LOCK:
+            with contextlib.chdir(cwd):
                 try:
-                    return repr(eval(code, ns))
-                except SyntaxError:
-                    exec(code, ns)
-                    return ns.get('_r', 'OK')
-            except Exception as e:
-                return f'Error: {e}'
+                    try:
+                        return repr(eval(code, ns))
+                    except SyntaxError:
+                        exec(code, ns)
+                        return ns.get('_r', 'OK')
+                except Exception as e:
+                    return f'Error: {e}'
 
     def do_code_run(self, args, response):
         '''执行代码片段，有长度限制，不允许代码中放大量数据，如有需要应当通过文件读取进行。'''
