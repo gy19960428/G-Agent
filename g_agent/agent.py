@@ -44,8 +44,6 @@ def get_system_prompt():
     prompt += get_global_memory()
     return prompt
 
-from g_agent.feishu_events import *  # noqa: F401,F403 (helpers + _feishu_* events)
-from g_agent.feishu_events import *  # noqa: F401,F403 (helpers + _feishu_* events)
 class Agent:
     def __init__(self):
         os.makedirs(os.path.join(script_dir, 'temp'), exist_ok=True)
