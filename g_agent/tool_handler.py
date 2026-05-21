@@ -1,4 +1,4 @@
-import sys, os, re, json, time, threading, importlib
+import sys, os, re, json, time, threading, importlib, contextlib
 from datetime import datetime
 from pathlib import Path
 import tempfile, traceback, subprocess, itertools, collections, difflib
@@ -299,6 +299,20 @@ class ToolHandler(BaseHandler):
         matches = re.findall(rf"```(?:{code_type})\n(.*?)\n```", response.content, re.DOTALL)
         return matches[-1].strip() if matches else None
 
+    def _inline_eval(self, code, cwd, ns):
+        """在 cwd 中执行 inline Python：先 eval；SyntaxError 时改 exec 并取 ns['_r']。
+        异常被吞为 'Error: ...' 字符串返回（与历史行为一致）。
+        使用 contextlib.chdir 保证异常路径下 cwd 也会被还原；注意 chdir 全局影响进程，调用方需保证串行。"""
+        with contextlib.chdir(cwd):
+            try:
+                try:
+                    return repr(eval(code, ns))
+                except SyntaxError:
+                    exec(code, ns)
+                    return ns.get('_r', 'OK')
+            except Exception as e:
+                return f'Error: {e}'
+
     def do_code_run(self, args, response):
         '''执行代码片段，有长度限制，不允许代码中放大量数据，如有需要应当通过文件读取进行。'''
         code_type = args.get("type", "python")
@@ -314,14 +328,7 @@ class ToolHandler(BaseHandler):
         maxlen = 10000 // args.get('_tool_num', 1)
         if code_type == 'python' and args.get("inline_eval"):
             ns = {'handler':self, 'parent':self.parent, 'history':json.dumps(self.parent.llmclient.backend.history)}
-            old_cwd = os.getcwd()
-            try:
-                os.chdir(cwd)
-                try:
-                    try: result = repr(eval(code, ns))
-                    except SyntaxError: exec(code, ns); result = ns.get('_r', 'OK')
-                except Exception as e: result = f'Error: {e}'
-            finally: os.chdir(old_cwd)
+            result = self._inline_eval(code, cwd, ns)
         else: result = yield from code_run(code, code_type, timeout, cwd, code_cwd=code_cwd, stop_signal=self.code_stop_signal, maxlen=maxlen)
         next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
         return StepOutcome(result, next_prompt=next_prompt)
