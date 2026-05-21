@@ -1667,4 +1667,7 @@ def fast_ask(prompt, cfg_name):
     sess = resolve_session(cfg_name)
     if not sess:
         raise ValueError(f"fast_ask: '{cfg_name}' unsupported")
-    return "".join(sess.raw_ask([{"role": "user", "content": prompt}]))
+    # raw_ask 内部按 list-of-blocks 处理 content(见 L1158-1159 cache_control 标注);
+    # 允许调用方传 plain str 或已构造好的 blocks, 这里统一包装。
+    content = prompt if isinstance(prompt, list) else [{"type": "text", "text": str(prompt)}]
+    return "".join(sess.raw_ask([{"role": "user", "content": content}]))
