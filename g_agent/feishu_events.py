@@ -2,6 +2,8 @@
 
 import re
 
+from g_agent.tools.user_io import format_error
+
 
 def _one_line(text):
     text = re.sub(r"\s+", " ", (text or "").strip())

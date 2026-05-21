@@ -39,6 +39,7 @@ def reload_mykeys():
     if mt == _mykey_mtime:
         return globals().get("mykeys", {}), False
     mk = _load_mykeys()
+    assert _mykey_path is not None  # _load_mykeys 成功即设 _mykey_path
     _mykey_mtime = os.stat(_mykey_path).st_mtime_ns
     print(f"[Info] Load mykeys from {_mykey_path}")
     globals().update(mykeys=mk)
@@ -58,10 +59,12 @@ def __getattr__(name):  # once guard in PEP 562
 
 def compress_history_tags(messages, keep_recent=10, max_len=800, force=False, interval=5):
     """Compress <thinking>/<tool_use>/<tool_result> tags in older messages to save tokens."""
-    compress_history_tags._cd = getattr(compress_history_tags, "_cd", 0) + 1
+    _cd = getattr(compress_history_tags, "_cd", 0) + 1
+    setattr(compress_history_tags, "_cd", _cd)
     if force:
-        compress_history_tags._cd = 0
-    if compress_history_tags._cd % interval != 0:
+        setattr(compress_history_tags, "_cd", 0)
+        _cd = 0
+    if _cd % interval != 0:
         return messages
     _before = sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
     _pats = {
@@ -117,7 +120,7 @@ def _sanitize_leading_user_msg(msg):
     content = msg.get("content")
     if not isinstance(content, list):
         return msg
-    texts = []
+    texts: list[str] = []
     for block in content:
         if not isinstance(block, dict):
             continue
@@ -224,7 +227,7 @@ _OAI_RESP_SSE_KNOWN_EVENTS = frozenset(
         "response.function_call.added",
     }
 )
-_SEEN_UNKNOWN_SSE_EVENTS = set()  # de-dup unknown evt warnings within process lifetime
+_SEEN_UNKNOWN_SSE_EVENTS: set[tuple[str, str]] = set()  # de-dup unknown evt warnings within process lifetime
 
 
 def _warn_unknown_sse_event(scope, evt_type):
@@ -240,7 +243,7 @@ def _warn_unknown_sse_event(scope, evt_type):
 def _parse_claude_sse(resp_lines):
     """Parse Anthropic SSE stream. Yields text chunks, returns list[content_block]."""
     content_blocks = []
-    current_block = None
+    current_block: dict | None = None
     tool_json_buf = ""
     stop_reason = None
     got_message_stop = False
@@ -445,7 +448,7 @@ def _parse_openai_sse(resp_lines, api_mode="chat_completions"):
                 blocks.append({"type": "tool_use", "id": bid, "name": fc["name"], "input": inp})
         return blocks
     else:
-        tc_buf = {}  # index -> {id, name, args}
+        tc_buf: dict[int, dict[str, str]] = {}  # index -> {id, name, args}
         reasoning_text = ""
         for line in resp_lines:
             if not line:
@@ -595,7 +598,8 @@ def _stream_with_retry(sess, url, headers, payload, parse_fn):
 
     def _delay(resp, attempt):
         try:
-            ra = float((resp.headers or {}).get("retry-after"))
+            ra_raw = (resp.headers or {}).get("retry-after")
+            ra = float(ra_raw) if ra_raw is not None else None
         except:
             ra = None
         return max(0.5, ra if ra is not None else min(30.0, 1.5 * (2**attempt)))
@@ -756,7 +760,7 @@ def _prepare_oai_tools(tools, api_mode="chat_completions"):
 
 
 def _to_responses_input(messages):
-    result, pending = [], []
+    result, pending = [], []  # type: list[dict], list[str]
     for msg in messages:
         role = str(msg.get("role", "user")).lower()
         if role == "tool":
@@ -812,7 +816,9 @@ def _msgs_claude2oai(messages):
         content = msg.get("content", "")
         blocks = content if isinstance(content, list) else [{"type": "text", "text": str(content)}]
         if role == "assistant":
-            text_parts, tool_calls, reasoning = [], [], ""
+            text_parts: list[dict] = []
+            tool_calls: list = []
+            reasoning = ""
             for b in blocks:
                 if not isinstance(b, dict):
                     continue
@@ -831,7 +837,7 @@ def _msgs_claude2oai(messages):
                             },
                         }
                     )
-            m = {"role": "assistant"}
+            m: dict = {"role": "assistant"}
             if reasoning:
                 m["reasoning_content"] = reasoning
             if text_parts:
@@ -862,7 +868,7 @@ def _msgs_claude2oai(messages):
                     )
                 elif b.get("type") == "image":
                     src = b.get("source") or {}
-                    if src.get("type") == "base64" and src.get("data"):
+                    if isinstance(src, dict) and src.get("type") == "base64" and src.get("data"):
                         text_parts.append(
                             {
                                 "type": "image_url",
@@ -883,6 +889,13 @@ def _msgs_claude2oai(messages):
 
 
 class BaseSession:
+    # Concrete impls set by subclasses (ClaudeSession / OpenAISession / ...)
+    def make_messages(self, history):  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def raw_ask(self, messages):  # pragma: no cover - overridden
+        raise NotImplementedError
+
     def __init__(self, cfg):
         self.api_key = cfg["apikey"]
         self.api_base = cfg["apibase"].rstrip("/")
@@ -1040,7 +1053,7 @@ def _fix_messages(messages):
     if not messages:
         return messages
     _wrap = lambda c: c if isinstance(c, list) else [{"type": "text", "text": str(c)}]
-    fixed = []
+    fixed: list[dict] = []
     for m in messages:
         if fixed and m["role"] == fixed[-1]["role"]:
             fixed[-1] = {
@@ -1376,9 +1389,9 @@ Follow these steps to think and act:
                 except Exception as e:
                     print(f"[parse-tool-use] {e!r}")
             if not tool_calls:
-                for e in errors:
-                    print(f"[Warn] {e}")
-                    tool_calls.append(MockToolCall("bad_json", {"msg": e}))
+                for err in errors:
+                    print(f"[Warn] {err}")
+                    tool_calls.append(MockToolCall("bad_json", {"msg": err}))
         return MockResponse(thinking, remaining_text.strip(), tool_calls, text)
 
 
@@ -1520,7 +1533,9 @@ class MixinSession:
             idx = (base + attempt) % n
             gen = self._orig_raw_asks[idx](*args, **kwargs)
             print(f"[MixinSession] Using session ({self._sessions[idx].name})")
-            last_chunk, return_val, yielded = None, [], False
+            last_chunk: object = None
+            return_val: list = []
+            yielded = False
             try:
                 while True:
                     chunk = next(gen)
@@ -1550,10 +1565,10 @@ class MixinSession:
             if nxt == base:  # full round failed, delay before next
                 rnd = (attempt + 1) // n
                 delay = min(30, self._base_delay * (1.5**rnd))
-                print(f"[MixinSession] {last_chunk[:80]}, round {rnd} exhausted, retry in {delay:.1f}s")
+                print(f"[MixinSession] {str(last_chunk)[:80]}, round {rnd} exhausted, retry in {delay:.1f}s")
                 time.sleep(delay)
             else:
-                print(f"[MixinSession] {last_chunk[:80]}, retry {attempt+1}/{self._retries} (s{idx}→s{nxt})")
+                print(f"[MixinSession] {str(last_chunk)[:80]}, retry {attempt+1}/{self._retries} (s{idx}→s{nxt})")
 
 
 THINKING_PROMPT_ZH = """
