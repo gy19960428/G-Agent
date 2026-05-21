@@ -17,6 +17,12 @@ class BaseHandler:
     def turn_end_callback(self, response, tool_calls, tool_results, turn, next_prompt, exit_reason): return next_prompt
     def dispatch(self, tool_name, args, response, index=0, tool_num=1):
         method_name = f"do_{tool_name}"
+        # 短路: _try_parse_tool_args 失败时显式标记,避免把 do_xxx 当空 args 跑
+        if isinstance(args, dict) and "_parse_error" in args:
+            err = args.get("_parse_error", "unknown"); raw = args.get("_raw", "")
+            msg = f"[tool_args_parse_error] {tool_name}: {err}; raw[:200]={raw[:200]!r}"
+            yield msg + "\n"
+            return StepOutcome(msg, next_prompt="\n参数解析失败,请重新生成 JSON。\n", should_exit=False)
         if hasattr(self, method_name):
             args['_index'] = index; args['_tool_num'] = tool_num
             prer = yield from try_call_generator(self.tool_before_callback, tool_name, args, response)

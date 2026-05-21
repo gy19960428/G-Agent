@@ -157,7 +157,7 @@ def _parse_claude_sse(resp_lines):
             if current_block:
                 if current_block["type"] == "tool_use":
                     try: current_block["input"] = json.loads(tool_json_buf) if tool_json_buf else {}
-                    except: current_block["input"] = {"_raw": tool_json_buf}
+                    except Exception as e: current_block["input"] = {"_parse_error": f"sse json: {e}", "_raw": tool_json_buf}
                 content_blocks.append(current_block)
                 current_block = None
         elif evt_type == "message_delta":
@@ -177,7 +177,7 @@ def _parse_claude_sse(resp_lines):
     if current_block:
         if current_block["type"] == "tool_use":
             try: current_block["input"] = json.loads(tool_json_buf) if tool_json_buf else {}
-            except: current_block["input"] = {"_raw": tool_json_buf}
+            except Exception as e: current_block["input"] = {"_parse_error": f"sse json (tail): {e}", "_raw": tool_json_buf}
         content_blocks.append(current_block); current_block = None
     if warn:
         print(f"[WARN] {warn.strip()}")
@@ -186,18 +186,20 @@ def _parse_claude_sse(resp_lines):
 
 def _try_parse_tool_args(raw):
     """Parse tool args string; split concatenated JSON objects like {..}{..} if needed.
-    Returns list of parsed dicts."""
+    Returns list of parsed dicts. On parse failure, returns
+    [{"_parse_error": "<reason>", "_raw": raw}] so the dispatcher can short-circuit
+    instead of silently running the tool with empty args (which masked model intent)."""
     if not raw: return [{}]
     try: return [json.loads(raw)]
-    except: pass
+    except Exception as e: _err = f"json.loads failed: {e}"
     parts = re.split(r'(?<=\})(?=\{)', raw)
     if len(parts) > 1:
         parsed = []
         for p in parts:
             try: parsed.append(json.loads(p))
-            except: return [{"_raw": raw}]
+            except Exception as e: return [{"_parse_error": f"split-json failed: {e}", "_raw": raw}]
         return parsed
-    return [{"_raw": raw}]
+    return [{"_parse_error": _err, "_raw": raw}]
 
 def _parse_openai_sse(resp_lines, api_mode="chat_completions"):
     """Parse OpenAI SSE stream (chat_completions or responses API).
@@ -320,7 +322,7 @@ def _parse_openai_json(data, api_mode="chat_completions"):
                         blocks.append({"type": "text", "text": p["text"]}); yield p["text"]
             elif item.get("type") == "function_call":
                 try: args = json.loads(item.get("arguments", "")) if item.get("arguments") else {}
-                except: args = {"_raw": item.get("arguments", "")}
+                except Exception as e: args = {"_parse_error": f"function_call args: {e}", "_raw": item.get("arguments", "")}
                 blocks.append({"type": "tool_use", "id": item.get("call_id", item.get("id", "")),
                                "name": item.get("name", ""), "input": args})
     else:
@@ -335,7 +337,7 @@ def _parse_openai_json(data, api_mode="chat_completions"):
         for tc in (msg.get("tool_calls") or []):
             fn = tc.get("function", {})
             try: args = json.loads(fn.get("arguments", "")) if fn.get("arguments") else {}
-            except: args = {"_raw": fn.get("arguments", "")}
+            except Exception as e: args = {"_parse_error": f"chat tool_call args: {e}", "_raw": fn.get("arguments", "")}
             blocks.append({"type": "tool_use", "id": tc.get("id", ""), "name": fn.get("name", ""), "input": args})
     return blocks
 
