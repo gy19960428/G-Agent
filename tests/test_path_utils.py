@@ -1,7 +1,7 @@
 """
 path_utils 单元测试：覆盖 fsapp.py 的全部调用契约。
 """
-import os
+
 import sys
 from pathlib import Path
 

@@ -3,7 +3,12 @@ g_agent_cli/cli.py - G-Agent 命令行分发系统
 
 通过 python -m g_agent_cli <命令> 或 g-agent <命令> 调用
 """
-import os, sys, subprocess, argparse, textwrap
+
+import os
+import sys
+import subprocess
+import argparse
+import textwrap
 
 # Windows GBK 终端兼容
 if sys.platform == "win32" and sys.stdout.encoding and sys.stdout.encoding.lower() in ("gbk", "gb2312"):
@@ -15,6 +20,7 @@ PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 
 def _frontends():
     return os.path.join(PROJECT_DIR, "frontends")
+
 
 def _reflect():
     return os.path.join(PROJECT_DIR, "reflect")
@@ -115,8 +121,12 @@ def cmd_list():
 def cmd_status():
     """检查进程状态"""
     import psutil
-    running = [p for p in psutil.process_iter(['pid', 'name', 'cmdline'])
-               if p.info['cmdline'] and any(('g_agent.agent' in c or 'g_agent/agent' in c) for c in p.info['cmdline'])]
+
+    running = [
+        p
+        for p in psutil.process_iter(["pid", "name", "cmdline"])
+        if p.info["cmdline"] and any(("g_agent.agent" in c or "g_agent/agent" in c) for c in p.info["cmdline"])
+    ]
     if running:
         print(f"🟢 运行中: {len(running)} 个进程")
         for p in running:
@@ -134,8 +144,7 @@ def cmd_update():
     if r.returncode != 0:
         print(r.stderr)
     print("📦 pip install...")
-    r2 = subprocess.run([sys.executable, "-m", "pip", "install", "-e", "."],
-                        capture_output=True, text=True)
+    r2 = subprocess.run([sys.executable, "-m", "pip", "install", "-e", "."], capture_output=True, text=True)
     print(r2.stdout[-500:] if r2.stdout else "")
     if r2.returncode != 0:
         print(r2.stderr[-500:])
@@ -146,7 +155,8 @@ def main():
         prog="g-agent",
         description="G-Agent 全局命令入口",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent("""\
+        epilog=textwrap.dedent(
+            """\
             示例:
               g-agent fs           启动飞书前端
               g-agent wechat       启动微信前端
@@ -155,7 +165,8 @@ def main():
               g-agent launcher     启动管理面板  
               g-agent configure    运行配置向导
               g-agent list         列出所有命令
-        """),
+        """
+        ),
     )
     parser.add_argument("command", nargs="?", help="命令名")
     parser.add_argument("args", nargs="*", help="子命令参数")
@@ -189,7 +200,7 @@ def main():
 
     if cmd not in COMMANDS:
         print(f"❌ 未知命令: {cmd}")
-        print(f"   使用 'g-agent list' 查看可用命令")
+        print("   使用 'g-agent list' 查看可用命令")
         sys.exit(1)
 
     info = COMMANDS[cmd]

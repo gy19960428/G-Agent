@@ -10,20 +10,20 @@ autonomous_task.py - 自主行动任务管理API
   set_todo()        → 返回TODO真实路径
 """
 
-import os
 import re
 import shutil
 from pathlib import Path
 from datetime import datetime
 
 # ── 路径计算（基于模块自身位置） ──
-_MODULE_DIR = Path(__file__).resolve().parent          # memory/autonomous_operation_sop/
-_MEMORY_DIR = _MODULE_DIR.parent                       # memory/
-_AGENT_DIR = _MEMORY_DIR.parent                        # G-Agent/
-_TEMP_DIR = _AGENT_DIR / "temp"                        # G-Agent/temp/
+_MODULE_DIR = Path(__file__).resolve().parent  # memory/autonomous_operation_sop/
+_MEMORY_DIR = _MODULE_DIR.parent  # memory/
+_AGENT_DIR = _MEMORY_DIR.parent  # G-Agent/
+_TEMP_DIR = _AGENT_DIR / "temp"  # G-Agent/temp/
 _REPORTS_DIR = _TEMP_DIR / "autonomous_reports"
 _HISTORY_FILE = _REPORTS_DIR / "history.txt"
 _TODO_FILE = _TEMP_DIR / "TODO.txt"
+
 
 def _next_report_number() -> int:
     """扫 history.txt 第一行提取最大 RXX 编号，返回下一个"""
@@ -32,7 +32,7 @@ def _next_report_number() -> int:
     with open(_HISTORY_FILE, "r", encoding="utf-8") as f:
         content = f.read()
     # 匹配所有 R 后跟数字的模式
-    nums = [int(m) for m in re.findall(r'R(\d+)', content)]
+    nums = [int(m) for m in re.findall(r"R(\d+)", content)]
     if not nums:
         return 1
     return max(nums) + 1
@@ -40,8 +40,11 @@ def _next_report_number() -> int:
 
 def get_todo() -> str:
     """返回 TODO.txt 的内容。若文件不存在返回提示。"""
-    if not _TODO_FILE.exists(): return f"[autonomous_task] TODO.txt 不存在，路径: {_TODO_FILE}"
-    with open(_TODO_FILE, "r", encoding="utf-8") as f: return f.read()
+    if not _TODO_FILE.exists():
+        return f"[autonomous_task] TODO.txt 不存在，路径: {_TODO_FILE}"
+    with open(_TODO_FILE, "r", encoding="utf-8") as f:
+        return f.read()
+
 
 def get_history(n: int = 20) -> str:
     """返回 history.txt 的前 n 行（最新在前）。"""
@@ -54,7 +57,7 @@ def get_history(n: int = 20) -> str:
 
 def set_todo(*args, **kwargs) -> str:
     """返回 TODO.txt 的真实绝对路径，供 agent/子agent 自行读写。"""
-    return f'路径: {str(_TODO_FILE)}'
+    return f"路径: {str(_TODO_FILE)}"
 
 
 def complete_task(taskname: str, historyline: str, report_path: str) -> str:
@@ -86,7 +89,7 @@ def complete_task(taskname: str, historyline: str, report_path: str) -> str:
     # ── 1. 移动报告 ──
     rnum = _next_report_number()
     # 清理 taskname 中的非法文件名字符
-    safe_name = re.sub(r'[<>:"/\\|?*]', '_', taskname).strip()
+    safe_name = re.sub(r'[<>:"/\\|?*]', "_", taskname).strip()
     dest_name = f"R{rnum}_{safe_name}.md"
     dest_path = _REPORTS_DIR / dest_name
 
@@ -98,9 +101,9 @@ def complete_task(taskname: str, historyline: str, report_path: str) -> str:
     # ── 2. prepend history ──
     # 自动加编号 + 日期（剥离 agent 可能已写的编号/日期，统一重建）
     line = historyline.strip()
-    line = re.sub(r'^R\d+\s*\|\s*', '', line)           # 剥离 R 编号
-    line = re.sub(r'^\d{4}-\d{2}-\d{2}\s*\|\s*', '', line)  # 剥离日期
-    today = datetime.now().strftime('%Y-%m-%d')
+    line = re.sub(r"^R\d+\s*\|\s*", "", line)  # 剥离 R 编号
+    line = re.sub(r"^\d{4}-\d{2}-\d{2}\s*\|\s*", "", line)  # 剥离日期
+    today = datetime.now().strftime("%Y-%m-%d")
     line = f"R{rnum} | {today} | {line}"
 
     try:

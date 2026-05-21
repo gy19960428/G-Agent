@@ -1,12 +1,12 @@
 """S1.4 验证: SSE 解析三家(Claude / OAI responses / OAI chat)行为锁定。
 覆盖: 文本拼接 / tool_use 还原 / 未知事件 warn 一次(去重) / JSON 解析失败可 grep。
 """
+
 import sys
 import json
 import importlib
 from pathlib import Path
 
-import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
@@ -39,6 +39,7 @@ def drain(gen):
 
 # ---------- Claude SSE ----------
 
+
 def test_claude_sse_text_and_tool_use():
     llm._SEEN_UNKNOWN_SSE_EVENTS.clear()
     events = [
@@ -47,15 +48,11 @@ def test_claude_sse_text_and_tool_use():
         {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "hi "}},
         {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "world"}},
         {"type": "content_block_stop"},
-        {"type": "content_block_start",
-         "content_block": {"type": "tool_use", "id": "tu_1", "name": "code_run"}},
-        {"type": "content_block_delta",
-         "delta": {"type": "input_json_delta", "partial_json": '{"q":'}},
-        {"type": "content_block_delta",
-         "delta": {"type": "input_json_delta", "partial_json": '"ok"}'}},
+        {"type": "content_block_start", "content_block": {"type": "tool_use", "id": "tu_1", "name": "code_run"}},
+        {"type": "content_block_delta", "delta": {"type": "input_json_delta", "partial_json": '{"q":'}},
+        {"type": "content_block_delta", "delta": {"type": "input_json_delta", "partial_json": '"ok"}'}},
         {"type": "content_block_stop"},
-        {"type": "message_delta", "delta": {"stop_reason": "end_turn"},
-         "usage": {"output_tokens": 5}},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}},
         {"type": "message_stop"},
     ]
     text, blocks = drain(llm._parse_claude_sse(sse(events)))
@@ -90,19 +87,20 @@ def test_claude_sse_json_parse_error_grepable(capsys):
 
 # ---------- OpenAI responses ----------
 
+
 def test_oai_responses_text_and_tool_use():
     llm._SEEN_UNKNOWN_SSE_EVENTS.clear()
     events = [
         {"type": "response.output_text.delta", "delta": "hello"},
         {"type": "response.output_text.delta", "delta": " world"},
-        {"type": "response.output_item.added", "output_index": 0,
-         "item": {"type": "function_call", "call_id": "fc_a", "name": "code_run"}},
-        {"type": "response.function_call_arguments.delta",
-         "output_index": 0, "delta": '{"x":1}'},
-        {"type": "response.function_call_arguments.done",
-         "output_index": 0, "arguments": '{"x":1}'},
-        {"type": "response.completed",
-         "response": {"usage": {"input_tokens": 1, "output_tokens": 2}}},
+        {
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {"type": "function_call", "call_id": "fc_a", "name": "code_run"},
+        },
+        {"type": "response.function_call_arguments.delta", "output_index": 0, "delta": '{"x":1}'},
+        {"type": "response.function_call_arguments.done", "output_index": 0, "arguments": '{"x":1}'},
+        {"type": "response.completed", "response": {"usage": {"input_tokens": 1, "output_tokens": 2}}},
     ]
     text, blocks = drain(llm._parse_openai_sse(sse(events), api_mode="responses"))
     assert text == "hello world"
@@ -139,16 +137,24 @@ def test_oai_responses_known_silent_no_warn(capsys):
 
 # ---------- OpenAI chat completions ----------
 
+
 def test_oai_chat_text_and_tool_calls():
     llm._SEEN_UNKNOWN_SSE_EVENTS.clear()
     events = [
         {"choices": [{"delta": {"content": "foo"}}]},
         {"choices": [{"delta": {"content": "bar"}}]},
-        {"choices": [{"delta": {"tool_calls": [
-            {"index": 0, "id": "call_1",
-             "function": {"name": "code_run", "arguments": '{"a":'}}]}}]},
-        {"choices": [{"delta": {"tool_calls": [
-            {"index": 0, "function": {"arguments": "1}"}}]}}]},
+        {
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {"index": 0, "id": "call_1", "function": {"name": "code_run", "arguments": '{"a":'}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "1}"}}]}}]},
         "data: [DONE]",
     ]
     text, blocks = drain(llm._parse_openai_sse(sse(events), api_mode="chat_completions"))

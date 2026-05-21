@@ -1,4 +1,14 @@
-import argparse, asyncio, json, os, queue as Q, re, sys, threading, time, uuid
+import argparse
+import asyncio
+import json
+import os
+import queue as Q
+import re
+import sys
+import threading
+import time
+import uuid
+
 os.environ.setdefault("G_AGENT_CHANNEL", "fs")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,7 +38,7 @@ def _ensure_runtime_paths():
 
 _ensure_runtime_paths()
 from g_agent.agent import Agent
-from frontends.chatapp_common import AgentChatMixin, FILE_HINT, split_text
+from frontends.chatapp_common import AgentChatMixin, split_text
 
 _TAG_PATS = [r"<" + t + r">.*?</" + t + r">" for t in ("thinking", "tool_use", "file_content")]
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".tiff", ".tif"}
@@ -83,7 +93,7 @@ def _claim_message_once(message_id):
         for mid in expired:
             _SEEN_MESSAGES.pop(mid, None)
         if len(_SEEN_MESSAGES) > _DEDUP_MAX:
-            for mid, _ in sorted(_SEEN_MESSAGES.items(), key=lambda item: item[1])[:len(_SEEN_MESSAGES) - _DEDUP_MAX]:
+            for mid, _ in sorted(_SEEN_MESSAGES.items(), key=lambda item: item[1])[: len(_SEEN_MESSAGES) - _DEDUP_MAX]:
                 _SEEN_MESSAGES.pop(mid, None)
         if message_id in _SEEN_MESSAGES:
             return False
@@ -119,12 +129,12 @@ def _display_text(text):
     cleaned = _strip_files(_clean(text))
     # 本地增强：剥 LLM turn marker / tool 调用块 / [Info] 行 / 折叠多空行
     # 把 <summary>xxx</summary> 渲染为单行状态（agent行动规范每轮必写summary，剥光会导致工具轮误报"截断"）
-    cleaned = re.sub(r'<summary>\s*(.*?)\s*</summary>', r'▸ \1', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    cleaned = re.sub(r'\*{0,2}LLM Running \(Turn \d+\) \.\.\.\*{0,2}\s*', '', cleaned)
-    cleaned = re.sub(r'🛠️[^\n]*\n````[\s\S]*?````\s*', '', cleaned)
-    cleaned = re.sub(r'`````[\s\S]*?`````\s*', '', cleaned)
-    cleaned = re.sub(r'(?m)^\[Info\].*$', '', cleaned)
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+    cleaned = re.sub(r"<summary>\s*(.*?)\s*</summary>", r"▸ \1", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r"\*{0,2}LLM Running \(Turn \d+\) \.\.\.\*{0,2}\s*", "", cleaned)
+    cleaned = re.sub(r"🛠️[^\n]*\n````[\s\S]*?````\s*", "", cleaned)
+    cleaned = re.sub(r"`````[\s\S]*?`````\s*", "", cleaned)
+    cleaned = re.sub(r"(?m)^\[Info\].*$", "", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     if cleaned:
         return cleaned
     tail = (text or "").strip()[-_TRUNC_TAIL:]
@@ -251,7 +261,7 @@ def _extract_element_content(element):
     for child in element.get("elements", []) or []:
         parts.extend(_extract_element_content(child))
     for col in element.get("columns", []) or []:
-        for child in (col.get("elements", []) if isinstance(col, dict) else []):
+        for child in col.get("elements", []) if isinstance(col, dict) else []:
             parts.extend(_extract_element_content(child))
     return parts
 
@@ -319,6 +329,7 @@ def _load_config():
         if str(path).endswith(".py"):
             import importlib.util
             import uuid
+
             mod_name = f"_fs_mykey_{uuid.uuid4().hex}"
             spec = importlib.util.spec_from_file_location(mod_name, path)
             if not spec or not spec.loader:
@@ -446,11 +457,14 @@ def _split_markdown(text, limit=_CARD_MD_LIMIT):
 
 
 def _card_raw(elements):
-    return json.dumps({
-        "schema": "2.0",
-        "config": {"streaming_mode": False, "width_mode": "fill"},
-        "body": {"elements": elements},
-    }, ensure_ascii=False)
+    return json.dumps(
+        {
+            "schema": "2.0",
+            "config": {"streaming_mode": False, "width_mode": "fill"},
+            "body": {"elements": elements},
+        },
+        ensure_ascii=False,
+    )
 
 
 def _card(text):
@@ -459,9 +473,14 @@ def _card(text):
 
 def _send_raw(receive_id, payload, msg_type, rtype):
     try:
-        body = CreateMessageRequest.builder().receive_id_type(rtype).request_body(
-            CreateMessageRequestBody.builder().receive_id(receive_id).msg_type(msg_type).content(payload).build()
-        ).build()
+        body = (
+            CreateMessageRequest.builder()
+            .receive_id_type(rtype)
+            .request_body(
+                CreateMessageRequestBody.builder().receive_id(receive_id).msg_type(msg_type).content(payload).build()
+            )
+            .build()
+        )
         r = client.im.v1.message.create(body)
         if r.success():
             return r.data.message_id if r.data else None
@@ -474,9 +493,12 @@ def _send_raw(receive_id, payload, msg_type, rtype):
 
 def _patch_card(message_id, card_json):
     try:
-        body = PatchMessageRequest.builder().message_id(message_id).request_body(
-            PatchMessageRequestBody.builder().content(card_json).build()
-        ).build()
+        body = (
+            PatchMessageRequest.builder()
+            .message_id(message_id)
+            .request_body(PatchMessageRequestBody.builder().content(card_json).build())
+            .build()
+        )
         r = client.im.v1.message.patch(body)
         if not r.success():
             print(f"[ERROR] patch_card 失败: {r.code}, {r.msg}")
@@ -529,61 +551,94 @@ def _ask_user_card_raw(ev, *, disabled=False, multi=False, selected_set=None, se
             label = f"◯ {label}"
             btn_type = "default"
             action = _FS_ACTION_SELECT
-        buttons.append({
-            "tag": "button",
-            "text": {"tag": "plain_text", "content": label},
-            "type": btn_type,
-            "disabled": bool(disabled),
-            "behaviors": [{
-                "type": "callback",
-                "value": {"kind": "ask_user", "menu_id": ev.menu_id, "idx": i, "owner": ev.owner_id, "action": action},
-            }],
-        })
+        buttons.append(
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": label},
+                "type": btn_type,
+                "disabled": bool(disabled),
+                "behaviors": [
+                    {
+                        "type": "callback",
+                        "value": {
+                            "kind": "ask_user",
+                            "menu_id": ev.menu_id,
+                            "idx": i,
+                            "owner": ev.owner_id,
+                            "action": action,
+                        },
+                    }
+                ],
+            }
+        )
     # 三个一行用 column_set 横排，避免过长纵向列表
     for start in range(0, len(buttons), 3):
-        row = buttons[start:start + 3]
-        elements.append({
-            "tag": "column_set",
-            "flex_mode": "stretch",
-            "horizontal_spacing": "small",
-            "columns": [
-                {"tag": "column", "width": "weighted", "weight": 1, "elements": [b]}
-                for b in row
-            ],
-        })
+        row = buttons[start : start + 3]
+        elements.append(
+            {
+                "tag": "column_set",
+                "flex_mode": "stretch",
+                "horizontal_spacing": "small",
+                "columns": [{"tag": "column", "width": "weighted", "weight": 1, "elements": [b]} for b in row],
+            }
+        )
     if multi or not has_candidates:
         ctrl_buttons = []
         if multi:
-            ctrl_buttons.append({
+            ctrl_buttons.append(
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "✅ Done"},
+                    "type": "primary",
+                    "disabled": bool(disabled),
+                    "behaviors": [
+                        {
+                            "type": "callback",
+                            "value": {
+                                "kind": "ask_user",
+                                "menu_id": ev.menu_id,
+                                "owner": ev.owner_id,
+                                "action": _FS_ACTION_DONE,
+                            },
+                        }
+                    ],
+                }
+            )
+        ctrl_buttons.append(
+            {
                 "tag": "button",
-                "text": {"tag": "plain_text", "content": "✅ Done"},
-                "type": "primary",
+                "text": {"tag": "plain_text", "content": "❌ Cancel"},
+                "type": "danger",
                 "disabled": bool(disabled),
-                "behaviors": [{"type": "callback", "value": {"kind": "ask_user", "menu_id": ev.menu_id, "owner": ev.owner_id, "action": _FS_ACTION_DONE}}],
-            })
-        ctrl_buttons.append({
-            "tag": "button",
-            "text": {"tag": "plain_text", "content": "❌ Cancel"},
-            "type": "danger",
-            "disabled": bool(disabled),
-            "behaviors": [{"type": "callback", "value": {"kind": "ask_user", "menu_id": ev.menu_id, "owner": ev.owner_id, "action": _FS_ACTION_CANCEL}}],
-        })
-        elements.append({
-            "tag": "column_set",
-            "flex_mode": "stretch",
-            "horizontal_spacing": "small",
-            "columns": [
-                {"tag": "column", "width": "weighted", "weight": 1, "elements": [b]}
-                for b in ctrl_buttons
-            ],
-        })
+                "behaviors": [
+                    {
+                        "type": "callback",
+                        "value": {
+                            "kind": "ask_user",
+                            "menu_id": ev.menu_id,
+                            "owner": ev.owner_id,
+                            "action": _FS_ACTION_CANCEL,
+                        },
+                    }
+                ],
+            }
+        )
+        elements.append(
+            {
+                "tag": "column_set",
+                "flex_mode": "stretch",
+                "horizontal_spacing": "small",
+                "columns": [{"tag": "column", "width": "weighted", "weight": 1, "elements": [b]} for b in ctrl_buttons],
+            }
+        )
     return _card_raw(elements)
 
 
 def _send_ask_user_card(receive_id, receive_id_type, ev):
     # multi 优先取协议字段 ev.multi, 兼容旧 question 文本 regex 兜底; 无候选时强制 False
-    multi = bool(ev.candidates) and (bool(getattr(ev, "multi", False))
-                                     or bool(_MULTI_SELECT_RE.search(ev.question or "")))
+    multi = bool(ev.candidates) and (
+        bool(getattr(ev, "multi", False)) or bool(_MULTI_SELECT_RE.search(ev.question or ""))
+    )
     card_json = _ask_user_card_raw(ev, multi=multi, selected_set=set())
     msg_id = _send_raw(receive_id, card_json, "interactive", receive_id_type)
     if msg_id and multi:
@@ -615,9 +670,11 @@ def update_message(message_id, content):
 def _upload_image_sync(file_path):
     try:
         with open(file_path, "rb") as f:
-            request = CreateImageRequest.builder().request_body(
-                CreateImageRequestBody.builder().image_type("message").image(f).build()
-            ).build()
+            request = (
+                CreateImageRequest.builder()
+                .request_body(CreateImageRequestBody.builder().image_type("message").image(f).build())
+                .build()
+            )
             response = client.im.v1.image.create(request)
             if response.success():
                 return response.data.image_key
@@ -633,9 +690,11 @@ def _upload_file_sync(file_path):
     file_name = os.path.basename(file_path)
     try:
         with open(file_path, "rb") as f:
-            request = CreateFileRequest.builder().request_body(
-                CreateFileRequestBody.builder().file_type(file_type).file_name(file_name).file(f).build()
-            ).build()
+            request = (
+                CreateFileRequest.builder()
+                .request_body(CreateFileRequestBody.builder().file_type(file_type).file_name(file_name).file(f).build())
+                .build()
+            )
             response = client.im.v1.file.create(request)
             if response.success():
                 return response.data.file_key
@@ -662,7 +721,9 @@ def _download_file_sync(message_id, file_key, resource_type="file"):
     if resource_type == "audio":
         resource_type = "file"
     try:
-        request = GetMessageResourceRequest.builder().message_id(message_id).file_key(file_key).type(resource_type).build()
+        request = (
+            GetMessageResourceRequest.builder().message_id(message_id).file_key(file_key).type(resource_type).build()
+        )
         response = client.im.v1.message_resource.get(request)
         if response.success():
             data = response.file.read() if hasattr(response.file, "read") else response.file
@@ -716,13 +777,23 @@ def _send_local_file(receive_id, file_path, receive_id_type="open_id"):
     if ext in _IMAGE_EXTS:
         image_key = _upload_image_sync(file_path)
         if image_key:
-            send_message(receive_id, json.dumps({"image_key": image_key}, ensure_ascii=False), msg_type="image", receive_id_type=receive_id_type)
+            send_message(
+                receive_id,
+                json.dumps({"image_key": image_key}, ensure_ascii=False),
+                msg_type="image",
+                receive_id_type=receive_id_type,
+            )
             return True
     else:
         file_key = _upload_file_sync(file_path)
         if file_key:
             msg_type = "media" if ext in _AUDIO_EXTS or ext in _VIDEO_EXTS else "file"
-            send_message(receive_id, json.dumps({"file_key": file_key}, ensure_ascii=False), msg_type=msg_type, receive_id_type=receive_id_type)
+            send_message(
+                receive_id,
+                json.dumps({"file_key": file_key}, ensure_ascii=False),
+                msg_type=msg_type,
+                receive_id_type=receive_id_type,
+            )
             return True
     send_message(receive_id, f"⚠️ 文件发送失败: {os.path.basename(file_path)}", receive_id_type=receive_id_type)
     return False
@@ -769,21 +840,21 @@ def _build_user_message(message):
 
 
 def _fmt_tool_call(tc):
-    name = tc.get('tool_name', '?')
-    args = {k: v for k, v in (tc.get('args') or {}).items() if not k.startswith('_')}
+    name = tc.get("tool_name", "?")
+    args = {k: v for k, v in (tc.get("args") or {}).items() if not k.startswith("_")}
     return f"- `{name}`({json.dumps(args, ensure_ascii=False)[:200]})"
 
 
 def _build_step_detail(resp, tool_calls):
     """从 LLM response + tool_calls 组装单步展开详情（纯函数）。"""
     parts = []
-    thinking = (getattr(resp, 'thinking', '') or '').strip() if resp else ''
+    thinking = (getattr(resp, "thinking", "") or "").strip() if resp else ""
     if thinking:
         parts.append(f"### 💭 Thinking\n{thinking}")
     if tool_calls:
         parts.append("### 🛠 Tool Calls\n" + "\n".join(_fmt_tool_call(tc) for tc in tool_calls))
-    content = _display_text((getattr(resp, 'content', '') or '')).strip() if resp else ''
-    if content and content != '...':
+    content = _display_text((getattr(resp, "content", "") or "")).strip() if resp else ""
+    if content and content != "...":
         parts.append(f"### 📝 Output\n{content}")
     return "\n\n".join(parts)
 
@@ -796,12 +867,13 @@ class _TaskCard:
     - JSON 体积预检 + _rollover 多页分片；
     - step/done 触发 rollover 重排 turn_base。
     """
+
     _DETAIL_LIMIT = 8000
     _FINAL_LIMIT = 6000
 
     def __init__(self, receive_id, rid_type):
         self.rid, self.rtype = receive_id, rid_type
-        self.steps = []          # [(summary, detail), ...]
+        self.steps = []  # [(summary, detail), ...]
         self.status = "🤔 思考中..."
         self.final = None
         self.msg_id = None
@@ -816,11 +888,12 @@ class _TaskCard:
     def _step_panel(self, idx, summary, detail):
         detail = detail or "_(无输出)_"
         if len(detail) > self._DETAIL_LIMIT:
-            detail = detail[:self._DETAIL_LIMIT] + f"\n\n…(已截断,共 {len(detail)} 字符)"
+            detail = detail[: self._DETAIL_LIMIT] + f"\n\n…(已截断,共 {len(detail)} 字符)"
         # 避免异常长 summary 把 header 整爆
         header_text = (summary or "")[:200]
         return {
-            "tag": "collapsible_panel", "expanded": False,
+            "tag": "collapsible_panel",
+            "expanded": False,
             "header": {"title": {"tag": "plain_text", "content": f"Turn {idx} · {header_text}"}},
             "elements": [{"tag": "markdown", "content": detail}],
         }
@@ -915,6 +988,7 @@ def _make_task_hook(card, task_id, on_final, last_active=None, ask_user_handler=
     - ask_user_handler：检测 ask_user 暂停事件，命中时 card.done(已暂停) 且不触发 on_final，
       保留 user_tasks 占位（J2 不让出 user_tasks，等用户卡片回选后续上）。
     """
+
     def hook(ctx):
         try:
             if last_active is not None:
@@ -922,43 +996,44 @@ def _make_task_hook(card, task_id, on_final, last_active=None, ask_user_handler=
             parent = getattr(ctx.get("self"), "parent", None)
             if getattr(parent, "_fs_active_task_id", None) != task_id:
                 return
-            if ctx.get('exit_reason'):
+            if ctx.get("exit_reason"):
                 ev = ask_user_handler(ctx) if ask_user_handler else None
                 if ev is not None:
                     card.done("已暂停，等待你的选择。")
                     return
-                resp = ctx.get('response')
-                raw = resp.content if hasattr(resp, 'content') else str(resp)
+                resp = ctx.get("response")
+                raw = resp.content if hasattr(resp, "content") else str(resp)
                 display = _display_text(raw)
                 if display.startswith("⚠️ 模型输出被截断或为空"):
                     # fallback：清洗后为空时，回退展示 thinking + tool_calls
                     parts = []
-                    thinking = getattr(resp, 'thinking', '') or ''
+                    thinking = getattr(resp, "thinking", "") or ""
                     if thinking:
                         parts.append(f"**[Thinking]**\n{thinking.strip()}")
-                    tool_calls = ctx.get('tool_calls') or []
+                    tool_calls = ctx.get("tool_calls") or []
                     for tc in tool_calls:
-                        name = tc.get('tool_name') or tc.get('name', '?')
-                        args = tc.get('args') or tc.get('arguments') or {}
-                        if name == 'ask_user':
-                            q = args.get('question', '')
-                            candidates = args.get('candidates') or []
+                        name = tc.get("tool_name") or tc.get("name", "?")
+                        args = tc.get("args") or tc.get("arguments") or {}
+                        if name == "ask_user":
+                            q = args.get("question", "")
+                            candidates = args.get("candidates") or []
                             if candidates:
-                                q += '\n' + '\n'.join(f'- {c}' for c in candidates)
+                                q += "\n" + "\n".join(f"- {c}" for c in candidates)
                             parts.append(q)
                         else:
                             args_s = json.dumps(args, ensure_ascii=False)
                             if len(args_s) > 200:
-                                args_s = args_s[:200] + '...'
+                                args_s = args_s[:200] + "..."
                             parts.append(f"`{name}`: {args_s}")
                     display = "\n\n".join(p for p in parts if p) or display
                 card.done(display)
                 on_final(raw)
-            elif ctx.get('summary'):
-                detail = _build_step_detail(ctx.get('response'), ctx.get('tool_calls') or [])
-                card.step(ctx['summary'], detail)
+            elif ctx.get("summary"):
+                detail = _build_step_detail(ctx.get("response"), ctx.get("tool_calls") or [])
+                card.step(ctx["summary"], detail)
         except Exception as e:
             print(f"[fs hook] error: {e}")
+
     return hook
 
 
@@ -978,7 +1053,12 @@ class FeishuApp(AgentChatMixin):
 
     async def run_agent(self, chat_id, text, *, receive_id=None, receive_id_type="open_id", images=None, **_):
         if self.user_tasks:
-            await self.send_text(chat_id, "当前会话已有任务在运行，请等待完成或发送 /stop 后再试。", receive_id=receive_id, receive_id_type=receive_id_type)
+            await self.send_text(
+                chat_id,
+                "当前会话已有任务在运行，请等待完成或发送 /stop 后再试。",
+                receive_id=receive_id,
+                receive_id_type=receive_id_type,
+            )
             return
         state = {"running": True}
         self.user_tasks[chat_id] = state
@@ -1000,10 +1080,13 @@ class FeishuApp(AgentChatMixin):
 
         last_active = [time.time()]
         ask_pending = [False]
-        _reason = 'unknown'
+        _reason = "unknown"
         _t_begin = time.time()
-        _preview = (text or '')[:80].replace('\n', ' ')
-        print(f"[FS-TASK] begin chat_id={chat_id} ulen={len(text or '')} imgs={len(images or [])} preview={_preview!r}", flush=True)
+        _preview = (text or "")[:80].replace("\n", " ")
+        print(
+            f"[FS-TASK] begin chat_id={chat_id} ulen={len(text or '')} imgs={len(images or [])} preview={_preview!r}",
+            flush=True,
+        )
 
         def _handle_ask_user(ctx):
             # 6h.2b: hook 内回调；命中 ask_user 时发卡片 + 入 BUS + 置 ask_pending
@@ -1027,7 +1110,7 @@ class FeishuApp(AgentChatMixin):
 
         try:
             await asyncio.to_thread(card.start)
-            if not hasattr(self.agent, '_turn_end_hooks'):
+            if not hasattr(self.agent, "_turn_end_hooks"):
                 self.agent._turn_end_hooks = {}
             self.agent._turn_end_hooks[hook_key] = _make_task_hook(
                 card, task_id, _finish, last_active=last_active, ask_user_handler=_handle_ask_user
@@ -1043,34 +1126,40 @@ class FeishuApp(AgentChatMixin):
                     item = None
                 if item and "done" in item:
                     await asyncio.to_thread(_finish, item.get("done", ""))
-                    _reason = 'done'
+                    _reason = "done"
                     break
                 if ask_pending[0]:
                     # 6h.2b: ask_user 已弹卡，旧任务暂停退出主循环；user_tasks 保留供回调续传
-                    _reason = 'ask_user'
+                    _reason = "ask_user"
                     print(f"[FS-TASK] paused kind=ask_user chat_id={chat_id}", flush=True)
                     break
                 now = time.time()
                 if now - last_active[0] > AGENT_IDLE_TIMEOUT_SEC:
                     self.agent.abort()
                     await asyncio.to_thread(card.fail, f"任务无活动超时({AGENT_IDLE_TIMEOUT_SEC}s)")
-                    _reason = 'idle_timeout'
-                    print(f"[FS-TASK] timeout kind=idle chat_id={chat_id} idle={now-last_active[0]:.1f}s threshold={AGENT_IDLE_TIMEOUT_SEC}s", flush=True)
+                    _reason = "idle_timeout"
+                    print(
+                        f"[FS-TASK] timeout kind=idle chat_id={chat_id} idle={now-last_active[0]:.1f}s threshold={AGENT_IDLE_TIMEOUT_SEC}s",
+                        flush=True,
+                    )
                     break
                 if now - start > AGENT_TIMEOUT_SEC:
                     self.agent.abort()
                     await asyncio.to_thread(card.fail, f"任务总时长超时({AGENT_TIMEOUT_SEC}s)")
-                    _reason = 'total_timeout'
-                    print(f"[FS-TASK] timeout kind=total chat_id={chat_id} elapsed={now-start:.1f}s threshold={AGENT_TIMEOUT_SEC}s", flush=True)
+                    _reason = "total_timeout"
+                    print(
+                        f"[FS-TASK] timeout kind=total chat_id={chat_id} elapsed={now-start:.1f}s threshold={AGENT_TIMEOUT_SEC}s",
+                        flush=True,
+                    )
                     break
             if not state["running"] and not result["sent"]:
                 self.agent.abort()
                 await asyncio.to_thread(card.fail, "已停止")
-                _reason = 'stopped'
+                _reason = "stopped"
         except Exception as e:
             traceback.print_exc()
             await asyncio.to_thread(card.fail, f"错误: {e}")
-            _reason = f'error:{type(e).__name__}'
+            _reason = f"error:{type(e).__name__}"
             print(f"[FS-TASK] error chat_id={chat_id} exc={type(e).__name__}: {str(e)[:200]}", flush=True)
         finally:
             print(f"[FS-TASK] end chat_id={chat_id} elapsed={time.time()-_t_begin:.1f}s reason={_reason}", flush=True)
@@ -1079,7 +1168,7 @@ class FeishuApp(AgentChatMixin):
                     delattr(self.agent, "_fs_active_task_id")
                 except AttributeError:
                     pass
-            if hasattr(self.agent, '_turn_end_hooks'):
+            if hasattr(self.agent, "_turn_end_hooks"):
                 self.agent._turn_end_hooks.pop(hook_key, None)
             if not ask_pending[0]:
                 # J2: ask_user 暂停期间保留 user_tasks 占位，等卡片回调续传
@@ -1125,13 +1214,19 @@ def handle_message(data):
     if message.message_type == "text" and user_input.startswith("/"):
         threading.Thread(
             target=_run_async,
-            args=(get_app().handle_command(chat_key, user_input, receive_id=receive_id, receive_id_type=receive_id_type),),
+            args=(
+                get_app().handle_command(chat_key, user_input, receive_id=receive_id, receive_id_type=receive_id_type),
+            ),
             daemon=True,
         ).start()
         return
     threading.Thread(
         target=_run_async,
-        args=(get_app().run_agent(chat_key, user_input, receive_id=receive_id, receive_id_type=receive_id_type, images=image_paths),),
+        args=(
+            get_app().run_agent(
+                chat_key, user_input, receive_id=receive_id, receive_id_type=receive_id_type, images=image_paths
+            ),
+        ),
         daemon=True,
     ).start()
 
@@ -1155,7 +1250,13 @@ def main():
         try:
             client = create_client()
             cli = lark.ws.Client(APP_ID, APP_SECRET, event_handler=handler, log_level=lark.LogLevel.INFO)
-            print("=" * 50 + "\n飞书 Agent 已启动（长连接模式）\n" + f"App ID: {APP_ID}\n配置: {CONFIG_PATH}\n等待消息...\n" + "=" * 50, flush=True)
+            print(
+                "=" * 50
+                + "\n飞书 Agent 已启动（长连接模式）\n"
+                + f"App ID: {APP_ID}\n配置: {CONFIG_PATH}\n等待消息...\n"
+                + "=" * 50,
+                flush=True,
+            )
             cli.start()
             retry_delay = 5
         except KeyboardInterrupt:
@@ -1215,6 +1316,7 @@ def handle_card_action(data):
         def _schedule_patch(card_body):
             if not open_msg_id:
                 return
+
             def _delayed(mid=open_msg_id, body=card_body):
                 try:
                     time.sleep(0.5)
@@ -1222,6 +1324,7 @@ def handle_card_action(data):
                     print(f"[FS-ASK] patch card msg_id={mid} ok={ok}", flush=True)
                 except Exception as e:
                     print(f"[FS-ASK] patch card error: {e}", flush=True)
+
             threading.Thread(target=_delayed, daemon=True).start()
 
         # ----- 多选分支：toggle / done / cancel -----
@@ -1264,9 +1367,13 @@ def handle_card_action(data):
                 answer = ", ".join(ev_popped.candidates[i] for i in ordered)
                 print(f"[FS-ASK] done menu_id={menu_id} selected={ordered} answer={answer!r}", flush=True)
                 _resume_after_ask(ev_popped.owner_id, answer)
-                card = _ask_user_card_raw(ev_popped, disabled=True, multi=True,
-                                          selected_set=snapshot,
-                                          note=f"已选择 {len(snapshot)} 项，任务已继续。")
+                card = _ask_user_card_raw(
+                    ev_popped,
+                    disabled=True,
+                    multi=True,
+                    selected_set=snapshot,
+                    note=f"已选择 {len(snapshot)} 项，任务已继续。",
+                )
                 _schedule_patch(card)
                 return _card_action_response("已继续任务", card=card, toast_type="success")
             if act == _FS_ACTION_CANCEL:
@@ -1275,9 +1382,9 @@ def handle_card_action(data):
                     _fs_ask_menu_store.pop(menu_id, None)
                 print(f"[FS-ASK] cancel menu_id={menu_id}", flush=True)
                 _resume_after_ask(ev_popped.owner_id, _ASK_CANCEL_PROMPT)
-                card = _ask_user_card_raw(ev_popped, disabled=True, multi=True,
-                                          selected_set=set(),
-                                          note="已取消选择，任务继续。")
+                card = _ask_user_card_raw(
+                    ev_popped, disabled=True, multi=True, selected_set=set(), note="已取消选择，任务继续。"
+                )
                 _schedule_patch(card)
                 return _card_action_response("已取消", card=card, toast_type="info")
             return _card_action_response("未知操作", toast_type="warning")
@@ -1312,7 +1419,6 @@ def handle_card_action(data):
     except Exception as e:
         print(f"[FS-ASK] card action error: {e}", flush=True)
         return _card_action_response(f"处理失败: {e}", toast_type="error")
-
 
 
 if __name__ == "__main__":

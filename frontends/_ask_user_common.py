@@ -23,11 +23,12 @@ _MENU_ID_LEN = 16
 @dataclass
 class AskUserEvent:
     """一次 ask_user 触发的规范化事件."""
+
     menu_id: str
     question: str
     candidates: List[str]
     owner_id: str
-    source: str            # 'telegram' | 'feishu' | ...
+    source: str  # 'telegram' | 'feishu' | ...
     multi: bool = False
     created_at: float = field(default_factory=time.time)
 
@@ -39,8 +40,7 @@ def _new_menu_id() -> str:
     return uuid.uuid4().hex[:_MENU_ID_LEN]
 
 
-def extract_event(ctx: dict, owner_id: str, source: str,
-                  menu_id: Optional[str] = None) -> Optional[AskUserEvent]:
+def extract_event(ctx: dict, owner_id: str, source: str, menu_id: Optional[str] = None) -> Optional[AskUserEvent]:
     """从 turn_end ctx 中抽取 ask_user 事件; 不匹配返回 None.
 
     严格匹配 ga.do_ask_user 协议:
@@ -135,8 +135,9 @@ class AskUserEventBus:
             return len(self._items)
 
 
-def register_hook(agent, hook_key: str, owner_resolver: Callable[[dict], str],
-                  source: str, on_event: Callable[[AskUserEvent], None]) -> None:
+def register_hook(
+    agent, hook_key: str, owner_resolver: Callable[[dict], str], source: str, on_event: Callable[[AskUserEvent], None]
+) -> None:
     """把 ask_user hook 注册到 agent._turn_end_hooks[hook_key].
 
     owner_resolver(ctx) -> owner_id 因 tg/fs 取 owner 渠道不同抽出来 (例如 tg 从模块级 chat_id, fs 从 ctx['_fs_open_id']).
@@ -160,9 +161,9 @@ def register_hook(agent, hook_key: str, owner_resolver: Callable[[dict], str],
     agent._turn_end_hooks[hook_key] = _hook
 
 
-def start_gc_timer(bus: AskUserEventBus, interval_sec: int = 300,
-                   ttl_sec: int = DEFAULT_TTL_SEC) -> threading.Timer:
+def start_gc_timer(bus: AskUserEventBus, interval_sec: int = 300, ttl_sec: int = DEFAULT_TTL_SEC) -> threading.Timer:
     """启动周期 gc; 返回 Timer 引用便于 cancel. 自我重排."""
+
     def _tick():
         try:
             bus.gc(ttl_sec)

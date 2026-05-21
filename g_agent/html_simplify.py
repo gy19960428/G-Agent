@@ -1,7 +1,9 @@
-try: from bs4 import BeautifulSoup
-except ImportError: print("[Error] BeautifulSoup4 未安装，请叫Agent安装BeautifulSoup4，再使用web相关工具。")
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    print("[Error] BeautifulSoup4 未安装，请叫Agent安装BeautifulSoup4，再使用web相关工具。")
 
-js_optHTML = r'''function optHTML(text_only=false) {
+js_optHTML = r"""function optHTML(text_only=false) {
 function createEnhancedDOMCopy() {  
   const nodeInfo = new WeakMap();  
   const ignoreTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'COLGROUP', 'COL', 'TEMPLATE', 'PARAM', 'SOURCE'];  
@@ -324,9 +326,9 @@ root.querySelectorAll('iframe').forEach(f => {
 });
 return root.outerHTML;
     }
-optHTML()'''
+optHTML()"""
 
-js_findMainList = r'''function findMainList(startElement = null) {
+js_findMainList = r"""function findMainList(startElement = null) {
         const root = startElement || document.body;
         const MIN_CHILDREN = 8;
         const MAX_CONTAINERS = 20;
@@ -591,31 +593,67 @@ js_findMainList = r'''function findMainList(startElement = null) {
             });
 
         return totalScore;
-    }'''
+    }"""
 
-def optimize_html_for_tokens(html):  
-    if type(html) is str: soup = BeautifulSoup(html, 'html.parser')  
-    else: soup = html
-    for svg in soup.find_all('svg'):
-        svg.clear(); svg.attrs = {}
-    [tag.attrs.pop('style', None) for tag in soup.find_all(True)]  
-    for tag in soup.find_all(True):  
-        if tag.has_attr('src'):  
-            if tag['src'].startswith('data:'): tag['src'] = '__img__'  
-            elif len(tag['src']) > 30: tag['src'] = '__url__'  
-        if tag.has_attr('href') and len(tag['href']) > 30: tag['href'] = '__link__'  
-        if tag.has_attr('action') and len(tag['action']) > 30: tag['action'] = '__url__'
-        for a in ('value', 'title', 'alt'):
-            if tag.has_attr(a) and isinstance(tag[a], str) and len(tag[a]) > 100: tag[a] = tag[a][:50] + ' ...'
-        for attr in list(tag.attrs.keys()):  
-            if attr not in ['id', 'class', 'name', 'src', 'href', 'alt', 'value', 'type', 'placeholder',
-                          'disabled', 'checked', 'selected', 'readonly', 'required', 'multiple',
-                          'role', 'aria-label', 'aria-expanded', 'aria-hidden', 'contenteditable',
-                          'title', 'for', 'action', 'method', 'target', 'colspan', 'rowspan']:  
-                if attr.startswith('data-v'): tag.attrs.pop(attr, None)
-                elif attr.startswith('data-') and isinstance(tag[attr], str) and len(tag[attr]) > 20:  
-                    tag[attr] = '__data__'  
-                elif not attr.startswith('data-'): tag.attrs.pop(attr, None)  
+
+def optimize_html_for_tokens(html):
+    if type(html) is str:
+        soup = BeautifulSoup(html, "html.parser")
+    else:
+        soup = html
+    for svg in soup.find_all("svg"):
+        svg.clear()
+        svg.attrs = {}
+    [tag.attrs.pop("style", None) for tag in soup.find_all(True)]
+    for tag in soup.find_all(True):
+        if tag.has_attr("src"):
+            if tag["src"].startswith("data:"):
+                tag["src"] = "__img__"
+            elif len(tag["src"]) > 30:
+                tag["src"] = "__url__"
+        if tag.has_attr("href") and len(tag["href"]) > 30:
+            tag["href"] = "__link__"
+        if tag.has_attr("action") and len(tag["action"]) > 30:
+            tag["action"] = "__url__"
+        for a in ("value", "title", "alt"):
+            if tag.has_attr(a) and isinstance(tag[a], str) and len(tag[a]) > 100:
+                tag[a] = tag[a][:50] + " ..."
+        for attr in list(tag.attrs.keys()):
+            if attr not in [
+                "id",
+                "class",
+                "name",
+                "src",
+                "href",
+                "alt",
+                "value",
+                "type",
+                "placeholder",
+                "disabled",
+                "checked",
+                "selected",
+                "readonly",
+                "required",
+                "multiple",
+                "role",
+                "aria-label",
+                "aria-expanded",
+                "aria-hidden",
+                "contenteditable",
+                "title",
+                "for",
+                "action",
+                "method",
+                "target",
+                "colspan",
+                "rowspan",
+            ]:
+                if attr.startswith("data-v"):
+                    tag.attrs.pop(attr, None)
+                elif attr.startswith("data-") and isinstance(tag[attr], str) and len(tag[attr]) > 20:
+                    tag[attr] = "__data__"
+                elif not attr.startswith("data-"):
+                    tag.attrs.pop(attr, None)
     return soup
 
 
@@ -632,12 +670,17 @@ temp_monitor_js = """function startStrMonitor(interval) {
         window._tm.id = setInterval(() => window._tm.extract().forEach(t => window._tm.all.add(t)), interval);  
     }  
     startStrMonitor(450);  
-"""  
-def start_temp_monitor(driver):  
-    try: driver.execute_js(temp_monitor_js)
-    except: pass
+"""
 
-def get_temp_texts(driver):  
+
+def start_temp_monitor(driver):
+    try:
+        driver.execute_js(temp_monitor_js)
+    except:
+        pass
+
+
+def get_temp_texts(driver):
     js = """function stopStrMonitor() {  
         if (!window._tm) return [];  
         clearInterval(window._tm.id);  
@@ -653,45 +696,58 @@ def get_temp_texts(driver):
         return result;  
         }  
         stopStrMonitor();  
-    """  
-    try: return list(set(driver.execute_js(js).get('data', [])))
-    except Exception as e: 
+    """
+    try:
+        return list(set(driver.execute_js(js).get("data", [])))
+    except Exception as e:
         print(e)
         return []
-    
-import time, re, os
-def get_main_block(driver, extra_js="", text_only=False): 
-    page = driver.execute_js(f"{extra_js}\n{js_optHTML}\nreturn optHTML({str(text_only).lower()});").get('data', '')
+
+
+import time
+import re
+
+
+def get_main_block(driver, extra_js="", text_only=False):
+    page = driver.execute_js(f"{extra_js}\n{js_optHTML}\nreturn optHTML({str(text_only).lower()});").get("data", "")
     if text_only:
-        page = re.sub(r' {2,}', ' ', page)           # 连续空格→单空格
-        page = re.sub(r'^ +', '', page, flags=re.M)   # 去行首空格
-        page = re.sub(r'(\n\s*){3,}', '\n\n', page)   # 3+空行→1空行
+        page = re.sub(r" {2,}", " ", page)  # 连续空格→单空格
+        page = re.sub(r"^ +", "", page, flags=re.M)  # 去行首空格
+        page = re.sub(r"(\n\s*){3,}", "\n\n", page)  # 3+空行→1空行
         return page.strip()
     return page
 
+
 def find_changed_elements(before_html, after_html):
-    before_soup = BeautifulSoup(before_html, 'html.parser')
-    after_soup = BeautifulSoup(after_html, 'html.parser')
+    before_soup = BeautifulSoup(before_html, "html.parser")
+    after_soup = BeautifulSoup(after_html, "html.parser")
+
     def direct_text(el):
-        return ''.join(t.strip() for t in el.find_all(string=True, recursive=False)).strip()
+        return "".join(t.strip() for t in el.find_all(string=True, recursive=False)).strip()
+
     def get_sig(el):
-        attrs = {k:v for k,v in el.attrs.items() if k != 'data-track-id'}
+        attrs = {k: v for k, v in el.attrs.items() if k != "data-track-id"}
         return f"{el.name}:{attrs}:{direct_text(el)}"
+
     def build_sigs(soup):
         result = {}
         for el in soup.find_all(True):
             sig = get_sig(el)
             result.setdefault(sig, []).append(el)
         return result
+
     before_sigs, after_sigs = build_sigs(before_soup), build_sigs(after_soup)
     changed = []
     for sig, els in after_sigs.items():
-        if sig not in before_sigs: changed.extend(els)
-        elif len(els) > len(before_sigs[sig]): changed.extend(els[:len(els) - len(before_sigs[sig])])
+        if sig not in before_sigs:
+            changed.extend(els)
+        elif len(els) > len(before_sigs[sig]):
+            changed.extend(els[: len(els) - len(before_sigs[sig])])
     if len(changed) == 0 and str(before_soup) != str(after_soup):
         before_els, after_els = before_soup.find_all(True), after_soup.find_all(True)
         for i in range(min(len(before_els), len(after_els))):
-            if get_sig(before_els[i]) != get_sig(after_els[i]): changed.append(after_els[i])
+            if get_sig(before_els[i]) != get_sig(after_els[i]):
+                changed.append(after_els[i])
     # 变化边界: parent不在changed中的元素
     cids = set(id(el) for el in changed)
     boundaries = [el for el in changed if el.parent is None or id(el.parent) not in cids]
@@ -699,101 +755,136 @@ def find_changed_elements(before_html, after_html):
     result = {"changed": len(changed)}
     if top:
         h = str(top)
-        result["top_change"] = h if len(h) <= 2000 else h[:2000] + '...[TRUNCATED]'
+        result["top_change"] = h if len(h) <= 2000 else h[:2000] + "...[TRUNCATED]"
     return result
 
+
 def get_html(driver, cutlist=False, maxchars=35000, instruction="", extra_js="", text_only=False):
-    if cutlist: rr = driver.execute_js(js_findMainList + "return findMainList(document.body);").get('data', [])
+    if cutlist:
+        rr = driver.execute_js(js_findMainList + "return findMainList(document.body);").get("data", [])
     page = get_main_block(driver, extra_js=extra_js, text_only=text_only)
-    if text_only: return page
+    if text_only:
+        return page
     soup = optimize_html_for_tokens(page)
     for div in soup.select('div[data-tag="iframe"]'):
-        div.name = 'iframe'; del div['data-tag']
+        div.name = "iframe"
+        del div["data-tag"]
     html = str(soup)
-    if not cutlist: return html
-    lists = rr if isinstance(rr, list) else ([rr] if isinstance(rr, dict) and rr.get('selector') else [])
-    if lists: print(f"[cutlist] Found {len(lists)} list(s): {[e.get('selector','?') if isinstance(e,dict) else '?' for e in lists]}")
+    if not cutlist:
+        return html
+    lists = rr if isinstance(rr, list) else ([rr] if isinstance(rr, dict) and rr.get("selector") else [])
+    if lists:
+        print(
+            f"[cutlist] Found {len(lists)} list(s): {[e.get('selector','?') if isinstance(e,dict) else '?' for e in lists]}"
+        )
     for entry in lists:
-        sel = entry.get('selector') if isinstance(entry, dict) else None
-        if not sel: continue
-        try: items = soup.select(sel)
-        except Exception: print(f'[cutlist] skip invalid selector: {sel}'); continue
-        if len(items) < 5: continue
+        sel = entry.get("selector") if isinstance(entry, dict) else None
+        if not sel:
+            continue
+        try:
+            items = soup.select(sel)
+        except Exception:
+            print(f"[cutlist] skip invalid selector: {sel}")
+            continue
+        if len(items) < 5:
+            continue
         total_len = sum(len(str(it)) for it in items)
         avg_len = total_len / len(items)
-        print(f"[cutlist]   '{sel}': {len(items)} items, avg {avg_len:.0f} chars, total {total_len}, if keep 3, save ~{total_len - 3 * avg_len:.0f} chars")
-        if avg_len < 200 or (avg_len < 700 and total_len < 2500): continue
-        hit = [it for it in items if instruction and instruction.strip() and instruction in it.get_text(" ",strip=True)]
+        print(
+            f"[cutlist]   '{sel}': {len(items)} items, avg {avg_len:.0f} chars, total {total_len}, if keep 3, save ~{total_len - 3 * avg_len:.0f} chars"
+        )
+        if avg_len < 200 or (avg_len < 700 and total_len < 2500):
+            continue
+        hit = [
+            it for it in items if instruction and instruction.strip() and instruction in it.get_text(" ", strip=True)
+        ]
         keep = hit[:6] if hit else items[:3]
         removed = [it for it in items if it not in keep]
         sample_texts = []
         for rm in removed[:5]:
             txt = rm.get_text(" ", strip=True)[:40]
-            if txt: sample_texts.append(txt)
+            if txt:
+                sample_texts.append(txt)
         hint_parts = [f'[FAKE ELEMENT] {len(removed)} more items hidden, selector: "{sel}"']
-        if sample_texts: hint_parts.append('Hidden items: ' + ','.join(f'"{t}"' for t in sample_texts))
+        if sample_texts:
+            hint_parts.append("Hidden items: " + ",".join(f'"{t}"' for t in sample_texts))
         hint_tag = soup.new_tag("div")
-        hint_tag.string = ' '.join(hint_parts)
-        if keep: keep[-1].insert_after(hint_tag)
-        for it in removed: it.decompose()
+        hint_tag.string = " ".join(hint_parts)
+        if keep:
+            keep[-1].insert_after(hint_tag)
+        for it in removed:
+            it.decompose()
     ss = str(optimize_html_for_tokens(soup)) if lists else html
     print(f"[get_html] Result: {len(html)} -> {len(ss)} chars after cutlist ({100-len(ss)*100//len(html)}% saved)")
-    if len(ss) > maxchars: ss = str(smart_truncate(soup, maxchars))
+    if len(ss) > maxchars:
+        ss = str(smart_truncate(soup, maxchars))
     return ss
+
 
 def smart_truncate(soup, budget, _depth=0):
     """原地截断 soup 使其接近 budget 字符。
     策略：穿透单子元素找分叉点；top3 能扛住 over 则按比例分担，否则从尾部删子元素。"""
     CUT_THRESHOLD = 8000  # 小于此值直接去尾，大于则继续递归找分叉点
-    indent = '  ' * _depth
+    indent = "  " * _depth
+
     def cut(ele, keep):
         from bs4 import NavigableString
-        s = str(ele)
-        over = len(s) - keep
-        if over <= 0: return
-        # 保护 FAKE ELEMENT 提示标签
-        protected = [c.extract() for c in ele.find_all(lambda tag: tag.string and '[FAKE ELEMENT]' in tag.string)]
+
         s = str(ele)
         over = len(s) - keep
         if over <= 0:
-            for p in protected: ele.append(p)
             return
-        marker = f' [TRUNCATED {over//1000}k chars]'
+        # 保护 FAKE ELEMENT 提示标签
+        protected = [c.extract() for c in ele.find_all(lambda tag: tag.string and "[FAKE ELEMENT]" in tag.string)]
+        s = str(ele)
+        over = len(s) - keep
+        if over <= 0:
+            for p in protected:
+                ele.append(p)
+            return
+        marker = f" [TRUNCATED {over//1000}k chars]"
         inner = ele.decode_contents()
         tag_overhead = len(s) - len(inner)
         inner_keep = max(keep - tag_overhead - len(marker), 0)
         ele.clear()
         if inner_keep > 0:
-            ele.append(BeautifulSoup(inner[:inner_keep], 'html.parser'))
+            ele.append(BeautifulSoup(inner[:inner_keep], "html.parser"))
         ele.append(NavigableString(marker))
-        for p in protected: ele.append(p)
+        for p in protected:
+            ele.append(p)
+
     total = len(str(soup))
-    if total <= budget: return soup
-    kids = [(c, len(str(c))) for c in soup.children if c.name and not (c.string and '[FAKE ELEMENT]' in c.string)]
-    if not kids: return soup
+    if total <= budget:
+        return soup
+    kids = [(c, len(str(c))) for c in soup.children if c.name and not (c.string and "[FAKE ELEMENT]" in c.string)]
+    if not kids:
+        return soup
     selflen = total - sum(l for _, l in kids)
     remaining_budget = max(budget - selflen, 0)
-    tag = getattr(soup, 'name', '?')
-    print(f'{indent}[smart_truncate] <{tag}> total={total} budget={budget} selflen={selflen} kids={len(kids)}')
+    tag = getattr(soup, "name", "?")
+    print(f"{indent}[smart_truncate] <{tag}> total={total} budget={budget} selflen={selflen} kids={len(kids)}")
     # === 1 kid: 穿透 ===
     if len(kids) == 1:
-        print(f'{indent}  -> single child, recurse into <{kids[0][0].name}>')
+        print(f"{indent}  -> single child, recurse into <{kids[0][0].name}>")
         smart_truncate(kids[0][0], remaining_budget, _depth)
         return soup
     over = sum(l for _, l in kids) - remaining_budget
-    if over <= 0: return soup
+    if over <= 0:
+        return soup
     # 看 top 3 能否承担 over
     ranked = sorted(range(len(kids)), key=lambda i: kids[i][1], reverse=True)
-    tops = list(ranked[:min(3, len(ranked))])
+    tops = list(ranked[: min(3, len(ranked))])
     top_total = sum(kids[i][1] for i in tops)
     if top_total < over:
         # === top 3 扛不住，从尾部删子元素 ===
         removed = 0
         removed_count = 0
         while kids and removed < over:
-            c, l = kids.pop(); c.decompose()
-            removed += l; removed_count += 1
-        print(f'{indent}  -> tail-cut: removed {removed_count} children ({removed//1000}k chars) from end')
+            c, l = kids.pop()
+            c.decompose()
+            removed += l
+            removed_count += 1
+        print(f"{indent}  -> tail-cut: removed {removed_count} children ({removed//1000}k chars) from end")
         return soup
     # === top 2-3 按比例分担 ===
     # 过滤掉太小的 kid（不到最大的 10%），让大的全扛
@@ -808,66 +899,82 @@ def smart_truncate(soup, budget, _depth=0):
         c, l = kids[i]
         share = int(over * l / top_total)
         new_keep = l - share
-        print(f'{indent}  -> <{c.name}> {l} -> {new_keep} (share={share})')
+        print(f"{indent}  -> <{c.name}> {l} -> {new_keep} (share={share})")
         actions.append((c, l, new_keep))
     # 再统一执行
     for c, l, new_keep in actions:
-        if new_keep <= 0: c.decompose()
-        elif new_keep > CUT_THRESHOLD: smart_truncate(c, new_keep, _depth + 1)
-        else: cut(c, new_keep)
+        if new_keep <= 0:
+            c.decompose()
+        elif new_keep > CUT_THRESHOLD:
+            smart_truncate(c, new_keep, _depth + 1)
+        else:
+            cut(c, new_keep)
     return soup
+
 
 def execute_js_rich(script, driver, no_monitor=False):
     last_html = None
     if not no_monitor:
-        try: last_html = get_html(driver, cutlist=False, extra_js=temp_monitor_js, maxchars=9999999)
-        except: pass
-    result = None;  error_msg = None;  reloaded = False; newTabs = []
-    before_sids = set(driver.get_session_dict().keys()); response = {}
+        try:
+            last_html = get_html(driver, cutlist=False, extra_js=temp_monitor_js, maxchars=9999999)
+        except:
+            pass
+    result = None
+    error_msg = None
+    reloaded = False
+    newTabs = []
+    before_sids = set(driver.get_session_dict().keys())
+    response = {}
     try:
         print(f"Executing: {script[:250]} ...")
         response = driver.execute_js(script)
-        result = response['data'] if 'data' in response else response.get('result')
-        if response.get('closed', 0) == 1: reloaded = True
-        time.sleep(1) 
+        result = response["data"] if "data" in response else response.get("result")
+        if response.get("closed", 0) == 1:
+            reloaded = True
+        time.sleep(1)
     except Exception as e:
         error = e.args[0] if e.args else str(e)
-        if isinstance(error, dict): error.pop('stack', None)
+        if isinstance(error, dict):
+            error.pop("stack", None)
         error_msg = str(error)
         print(f"Error: {error_msg}")
-    rr = {
-        "status": "failed" if error_msg else "success",
-        "js_return": result,
-        "tab_id": driver.default_session_id
-    }  
-    if reloaded: rr['reloaded'] = reloaded
-    if response.get('newTabs'): rr['newTabs'] = response['newTabs']
+    rr = {"status": "failed" if error_msg else "success", "js_return": result, "tab_id": driver.default_session_id}
+    if reloaded:
+        rr["reloaded"] = reloaded
+    if response.get("newTabs"):
+        rr["newTabs"] = response["newTabs"]
     else:
         after = driver.get_session_dict()
         new_sids = {k: v for k, v in after.items() if k not in before_sids}
         if new_sids:
-            newTabs = [{'id': k, 'url': v} for k, v in new_sids.items()]
-            rr['newTabs'] = newTabs
-            rr['suggestion'] = "页面已刷新，以上新标签页在执行期间连接。"
-    if error_msg: rr['error'] = error_msg
-    if no_monitor: return rr
+            newTabs = [{"id": k, "url": v} for k, v in new_sids.items()]
+            rr["newTabs"] = newTabs
+            rr["suggestion"] = "页面已刷新，以上新标签页在执行期间连接。"
+    if error_msg:
+        rr["error"] = error_msg
+    if no_monitor:
+        return rr
     if not reloaded:
-        try: rr['transients'] = get_temp_texts(driver)
-        except: rr['transients'] = []
+        try:
+            rr["transients"] = get_temp_texts(driver)
+        except:
+            rr["transients"] = []
     if not reloaded and len(newTabs) == 0:
         try:
             current_html = get_html(driver, cutlist=False, maxchars=9999999)
-            if last_html is None: raise Exception("no baseline")
+            if last_html is None:
+                raise Exception("no baseline")
             diff_data = find_changed_elements(last_html, current_html)
-            change_count = diff_data.get('changed', 0)
-            top_change = diff_data.get('top_change', '')
+            change_count = diff_data.get("changed", 0)
+            top_change = diff_data.get("top_change", "")
             diff_summary = f"DOM变化量: {change_count}"
-            if top_change: diff_summary += f"\n最显著变化:\n{top_change}"
-            transients = rr.get('transients', [])
+            if top_change:
+                diff_summary += f"\n最显著变化:\n{top_change}"
+            transients = rr.get("transients", [])
             if change_count == 0 and not transients and len(newTabs) == 0:
                 diff_summary += " (页面无变化)"
-                rr['suggestion'] = "页面无明显变化"
+                rr["suggestion"] = "页面无明显变化"
         except:
             diff_summary = "页面变化监控不可用"
-        rr['diff'] = diff_summary
+        rr["diff"] = diff_summary
     return rr

@@ -1,26 +1,36 @@
 # reflect/goal_mode.py — Goal Mode: 持续自驱直到预算耗尽
 # 启动: set GOAL_STATE=temp/xxx.json && python -m g_agent.agent --reflect reflect/goal_mode.py
 # 配置: agent按SOP写好state json，通过环境变量GOAL_STATE指定路径
-import os, json, time
+import os
+import json
+import time
 
-INTERVAL = 3   # check间隔短，agent跑完立刻再检查
+INTERVAL = 3  # check间隔短，agent跑完立刻再检查
 ONCE = False
 
 _dir = os.path.dirname(os.path.abspath(__file__))
-STATE_FILE = ''
+STATE_FILE = ""
+
+
 def init(a):
     global STATE_FILE
-    STATE_FILE = a.get('goal_state') or os.environ.get('GOAL_STATE') or os.path.join(_dir, '../temp/goal_state.json')
-    if not os.path.isabs(STATE_FILE): STATE_FILE = os.path.join(_dir, '..', STATE_FILE)
+    STATE_FILE = a.get("goal_state") or os.environ.get("GOAL_STATE") or os.path.join(_dir, "../temp/goal_state.json")
+    if not os.path.isabs(STATE_FILE):
+        STATE_FILE = os.path.join(_dir, "..", STATE_FILE)
+
+
 # --- state 管理 ---
 def _load():
-    if not os.path.isfile(STATE_FILE): return None
-    with open(STATE_FILE, 'r', encoding='utf-8') as f:
+    if not os.path.isfile(STATE_FILE):
+        return None
+    with open(STATE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def _save(state):
-    with open(STATE_FILE, 'w', encoding='utf-8') as f:
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+
 
 # --- prompt 模板 ---
 CONTINUATION_PROMPT = """[Goal Mode — 持续推进]
@@ -58,46 +68,46 @@ BUDGET_LIMIT_PROMPT = """[Goal Mode — 预算耗尽，收口]
 {done_prompt}
 """
 
+
 # --- 主逻辑 ---
 def check():
     state = _load()
-    if state is None: return '/exit'
-    
-    status = state.get('status', 'running')
-    if status != 'running': return '/exit'
-    
-    start_time = state.get('start_time', time.time())
-    budget_sec = state.get('budget_seconds', 1800)  # 默认30分钟
+    if state is None:
+        return "/exit"
+
+    status = state.get("status", "running")
+    if status != "running":
+        return "/exit"
+
+    start_time = state.get("start_time", time.time())
+    budget_sec = state.get("budget_seconds", 1800)  # 默认30分钟
     elapsed = time.time() - start_time
     remaining = budget_sec - elapsed
-    turn = state.get('turns_used', 0) + 1
-    max_turns = state.get('max_turns', 50)  # 防空转上限
-    
+    turn = state.get("turns_used", 0) + 1
+    max_turns = state.get("max_turns", 50)  # 防空转上限
+
     # 预算耗尽或轮次上限
     if remaining <= 0 or turn > max_turns:
-        state['status'] = 'wrapping_up'
+        state["status"] = "wrapping_up"
         _save(state)
         return BUDGET_LIMIT_PROMPT.format(
-            objective=state['objective'],
-            budget_min=budget_sec / 60,
-            done_prompt=state.get('done_prompt', '')
+            objective=state["objective"], budget_min=budget_sec / 60, done_prompt=state.get("done_prompt", "")
         )
-    
+
     # 正常continuation
-    state['turns_used'] = turn
+    state["turns_used"] = turn
     _save(state)
     return CONTINUATION_PROMPT.format(
-        objective=state['objective'],
-        elapsed_min=elapsed / 60,
-        remaining_min=remaining / 60,
-        turn=turn
+        objective=state["objective"], elapsed_min=elapsed / 60, remaining_min=remaining / 60, turn=turn
     )
+
 
 def on_done(result):
     state = _load()
-    if state is None: return
-    
-    if state.get('status') == 'wrapping_up':
-        state['status'] = 'done_budget'
-        state['end_time'] = time.time()
+    if state is None:
+        return
+
+    if state.get("status") == "wrapping_up":
+        state["status"] = "done_budget"
+        state["end_time"] = time.time()
         _save(state)

@@ -2,6 +2,7 @@
 
 注意：本文件不能出现字面的 file-ref 双花括号 token，否则会被写入工具的预处理展开。
 统一通过 _ref() 在运行时拼接构造。"""
+
 import os
 import sys
 from pathlib import Path

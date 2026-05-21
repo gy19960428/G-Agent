@@ -6,13 +6,12 @@ contextlib.chdir 是进程级状态，多线程同时调用 _inline_eval 会互�
 
 进程级 RLock 应保证同一时刻只有一个 inline_eval 在执行 chdir 段。
 """
+
 import os
 import sys
-import tempfile
 import threading
 from pathlib import Path
 
-import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
@@ -42,10 +41,7 @@ def test_inline_eval_concurrent_no_cwd_crosstalk(tmp_path):
 
     results = [None] * N
     barrier = threading.Barrier(N)
-    threads = [
-        threading.Thread(target=_run_one, args=(handler, dirs[i], results, i, barrier))
-        for i in range(N)
-    ]
+    threads = [threading.Thread(target=_run_one, args=(handler, dirs[i], results, i, barrier)) for i in range(N)]
     for t in threads:
         t.start()
     for t in threads:

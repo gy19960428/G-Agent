@@ -1,8 +1,18 @@
-import os, sys, re, threading, asyncio, queue as Q, time, random, uuid
+import os
+import sys
+import re
+import threading
+import asyncio
+import queue as Q
+import time
+import random
+import uuid
+
 os.environ.setdefault("G_AGENT_CHANNEL", "tg")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_TEMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'temp')
+_TEMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "temp")
 from g_agent.agent import Agent
+
 try:
     from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
     from telegram.constants import ChatType, MessageLimit, ParseMode
@@ -33,7 +43,7 @@ from _ask_user_common import AskUserEventBus, register_hook, start_gc_timer
 agent = Agent()
 agent.verbose = False
 agent.inc_out = True
-ALLOWED = set(mykeys.get('tg_allowed_users', []))
+ALLOWED = set(mykeys.get("tg_allowed_users", []))
 
 _DRAFT_HINT = "thinking..."
 _STREAM_SUFFIX = " ⏳"
@@ -64,8 +74,7 @@ _QUOTE_TOKEN_PATTERN = re.escape(_QUOTE_OPEN_TAG) + r"([\s\S]*?)" + re.escape(_Q
 _MD_TOKEN_RE = re.compile(
     (
         r"(`{3,})([A-Za-z0-9_+-]*)\n([\s\S]*?)\1"
-        r"|" + _QUOTE_TOKEN_PATTERN +
-        r"|\[([^\]]+)\]\(([^)\n]+)\)"
+        r"|" + _QUOTE_TOKEN_PATTERN + r"|\[([^\]]+)\]\(([^)\n]+)\)"
         r"|`([^`\n]+)`"
         r"|\*\*([^\n]+?)\*\*"
         r"|__([^\n]+?)__"
@@ -80,8 +89,10 @@ _TURN_SUMMARY_LIMIT = 160
 _TURN_SUMMARY_RE = re.compile(r"<summary>\s*(.*?)\s*</summary>", re.DOTALL)
 _TURN_SUMMARY_SEARCH_STRIP_RE = re.compile(r"`{3,}[\s\S]*?`{3,}|<thinking>[\s\S]*?</thinking>", re.DOTALL)
 
+
 def _make_draft_id():
     return random.randint(1, 2**31 - 1)
+
 
 def _visible_segments(text):
     text = (text or "").strip()
@@ -91,6 +102,7 @@ def _visible_segments(text):
     for part in split_text(text, _STREAM_SEGMENT_LIMIT):
         segments.extend(_markdown_safe_segments(part))
     return segments
+
 
 def _markdown_safe_segments(text, limit=None):
     limit = limit or MessageLimit.MAX_TEXT_LENGTH
@@ -118,15 +130,18 @@ def _markdown_safe_segments(text, limit=None):
             cut = best
         chunk = remaining[:cut].rstrip() or remaining[:best]
         parts.append(chunk)
-        remaining = remaining[len(chunk):].lstrip()
+        remaining = remaining[len(chunk) :].lstrip()
     return parts
+
 
 def _line_complete(line):
     return (line or "").endswith(("\n", "\r"))
 
+
 def _turn_marker_number(line):
     match = _TURN_MARKER_RE.fullmatch((line or "").strip())
     return int(match.group(1)) if match else None
+
 
 def _maybe_partial_turn_marker(line):
     text = (line or "").strip().lstrip("*")
@@ -135,8 +150,10 @@ def _maybe_partial_turn_marker(line):
     marker_head = "LLM Running (Turn "
     return marker_head.startswith(text) or text.startswith(marker_head)
 
+
 def _maybe_partial_code_fence(line):
     return bool(re.match(r"^\s*`{1,}[^`\r\n]*$", line or ""))
+
 
 def _extract_turn_summary(raw_text):
     search_text = _TURN_SUMMARY_SEARCH_STRIP_RE.sub("", raw_text or "")
@@ -145,12 +162,14 @@ def _extract_turn_summary(raw_text):
         return ""
     summary = re.sub(r"\s+", " ", match.group(1)).strip()
     if len(summary) > _TURN_SUMMARY_LIMIT:
-        summary = summary[:_TURN_SUMMARY_LIMIT - 3].rstrip() + "..."
+        summary = summary[: _TURN_SUMMARY_LIMIT - 3].rstrip() + "..."
     return summary
+
 
 def _quote_tag(text):
     safe_text = (text or "").strip().replace(_QUOTE_OPEN_TAG, "").replace(_QUOTE_CLOSE_TAG, "")
     return f"{_QUOTE_OPEN_TAG}{safe_text}{_QUOTE_CLOSE_TAG}"
+
 
 def _inject_turn_summary(body, summary):
     if not (body or "").strip() or not (summary or "").strip():
@@ -164,6 +183,7 @@ def _inject_turn_summary(body, summary):
     if rest:
         return f"{title}\n\n{summary_line}\n\n{rest}"
     return f"{title}\n\n{summary_line}"
+
 
 def _resolve_files(paths):
     files, seen = [], set()
@@ -180,11 +200,14 @@ def _resolve_files(paths):
 def _render_file_markers(text):
     def repl(match):
         return os.path.basename(match.group(1))
+
     return re.sub(r"\[FILE:([^\]]+)\]", repl, text or "").strip()
+
 
 def _files_from_text(text):
     cleaned = clean_reply(text) if (text or "").strip() else ""
     return _resolve_files(extract_files(cleaned))
+
 
 async def _send_files(root_msg, files):
     for fpath in files:
@@ -201,28 +224,34 @@ async def _send_files(root_msg, files):
             except Exception:
                 pass
 
+
 async def _send_files_from_text(root_msg, text):
     await _send_files(root_msg, _files_from_text(text))
+
 
 def _escape_pre(text):
     return escape_markdown(text or "", version=2, entity_type="pre")
 
+
 def _escape_code(text):
     return escape_markdown(text or "", version=2, entity_type="code")
+
 
 def _escape_link_target(text):
     return escape_markdown(text or "", version=2, entity_type="text_link")
 
+
 def _quote_to_markdown_v2(text):
     lines = (text or "").strip().splitlines() or [""]
     return "\n".join(f"> {escape_markdown(line, version=2)}" for line in lines)
+
 
 def _to_markdown_v2(text):
     if not text:
         return ""
     parts, pos = [], 0
     for match in _MD_TOKEN_RE.finditer(text):
-        parts.append(escape_markdown(text[pos:match.start()], version=2))
+        parts.append(escape_markdown(text[pos : match.start()], version=2))
         if match.group(1):
             lang = re.sub(r"[^A-Za-z0-9_+-]", "", match.group(2) or "")
             code = _escape_pre(match.group(3) or "")
@@ -248,8 +277,10 @@ def _to_markdown_v2(text):
     parts.append(escape_markdown(text[pos:], version=2))
     return "".join(parts)
 
+
 def _is_not_modified_error(exc):
     return "not modified" in str(exc).lower()
+
 
 def _build_ask_user_markup(menu_id, candidates, multi=False, selected_indexes=None):
     if multi:
@@ -257,35 +288,46 @@ def _build_ask_user_markup(menu_id, candidates, multi=False, selected_indexes=No
         rows = []
         for idx, candidate in enumerate(candidates):
             mark = "✓ " if idx in selected_set else ""
-            rows.append([InlineKeyboardButton(
-                f"{mark}{candidate}",
-                callback_data=f"{_ASK_CALLBACK_PREFIX}{menu_id}:{_ASK_TOGGLE_ACTION}:{idx}",
-            )])
-        rows.append([InlineKeyboardButton(
-            "Done",
-            callback_data=f"{_ASK_CALLBACK_PREFIX}{menu_id}:{_ASK_DONE_ACTION}",
-        )])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"{mark}{candidate}",
+                        callback_data=f"{_ASK_CALLBACK_PREFIX}{menu_id}:{_ASK_TOGGLE_ACTION}:{idx}",
+                    )
+                ]
+            )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "Done",
+                    callback_data=f"{_ASK_CALLBACK_PREFIX}{menu_id}:{_ASK_DONE_ACTION}",
+                )
+            ]
+        )
         return InlineKeyboardMarkup(rows)
     rows = [
         [InlineKeyboardButton(candidate, callback_data=f"{_ASK_CALLBACK_PREFIX}{menu_id}:{idx}")]
         for idx, candidate in enumerate(candidates)
     ]
-    rows.append([
-        InlineKeyboardButton(_ASK_CANCEL_LABEL, callback_data=f"{_ASK_CALLBACK_PREFIX}{menu_id}:{_ASK_CANCEL_ACTION}")
-    ])
+    rows.append(
+        [InlineKeyboardButton(_ASK_CANCEL_LABEL, callback_data=f"{_ASK_CALLBACK_PREFIX}{menu_id}:{_ASK_CANCEL_ACTION}")]
+    )
     return InlineKeyboardMarkup(rows)
+
 
 def _parse_ask_callback_data(data):
     if not (data or "").startswith(_ASK_CALLBACK_PREFIX):
         return None, None
-    payload = data[len(_ASK_CALLBACK_PREFIX):]
+    payload = data[len(_ASK_CALLBACK_PREFIX) :]
     menu_id, sep, action = payload.partition(":")
     if not sep or not menu_id or not action:
         return None, None
     return menu_id, action
 
+
 def _build_text_prompt(text):
     return f"{FILE_HINT}\n\n{text}"
+
 
 def _normalize_ask_menu_event(stored):
     if isinstance(stored, dict):
@@ -301,6 +343,7 @@ def _normalize_ask_menu_event(stored):
         }
     return None
 
+
 def _render_ask_user_result(event, selected=None, cancelled=False):
     question = str(event.get("question") or "请选择下一步操作：").strip() or "请选择下一步操作："
     candidates = event.get("candidates") or []
@@ -315,14 +358,16 @@ def _render_ask_user_result(event, selected=None, cancelled=False):
         lines.append(f"已选择：{selected}")
     text = "\n".join(lines)
     if len(text) > MessageLimit.MAX_TEXT_LENGTH:
-        text = text[:MessageLimit.MAX_TEXT_LENGTH - 18].rstrip() + "\n...[truncated]"
+        text = text[: MessageLimit.MAX_TEXT_LENGTH - 18].rstrip() + "\n...[truncated]"
     return text
+
 
 async def _clear_ask_reply_markup(query):
     try:
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception as exc:
         print(f"[TG ask_user menu cleanup] {type(exc).__name__}: {exc}", flush=True)
+
 
 async def _edit_ask_user_result(query, event, selected=None, cancelled=False):
     try:
@@ -333,6 +378,7 @@ async def _edit_ask_user_result(query, event, selected=None, cancelled=False):
     except Exception as exc:
         print(f"[TG ask_user menu edit] {type(exc).__name__}: {exc}", flush=True)
         await _clear_ask_reply_markup(query)
+
 
 async def _send_ask_user_menu(root_msg, event):
     # event: AskUserEvent (公共层已生成 menu_id 并放入 _BUS)
@@ -362,11 +408,12 @@ async def _send_ask_user_menu(root_msg, event):
         fallback = event.question + "\n" + "\n".join(f"- {candidate}" for candidate in candidates)
         await root_msg.reply_text(fallback)
 
+
 class _TelegramStreamSession:
     def __init__(self, root_msg):
         self.root_msg = root_msg
         self.private_chat = getattr(getattr(root_msg, "chat", None), "type", "") == ChatType.PRIVATE
-        self.can_use_draft = self.private_chat   # update tg client!
+        self.can_use_draft = self.private_chat  # update tg client!
         self.draft_id = _make_draft_id()
         self.live_msg = None
         self.raw_text = ""
@@ -643,13 +690,11 @@ class _TelegramStreamSession:
                     edited_overflow = await self._retry_call(self._edit_text_once, overflow_msg, segment)
                 else:
                     edited_overflow = await self._edit_text_once(overflow_msg, segment)
-                new_overflow_msgs.append(
-                    edited_overflow if hasattr(edited_overflow, "edit_text") else overflow_msg
-                )
+                new_overflow_msgs.append(edited_overflow if hasattr(edited_overflow, "edit_text") else overflow_msg)
             else:
                 new_overflow_msgs.append(await self._reply_text(segment, wait_retry=wait_retry))
 
-        for stale_msg in overflow_msgs[len(new_overflow_msgs):]:
+        for stale_msg in overflow_msgs[len(new_overflow_msgs) :]:
             await self._delete_text(stale_msg, wait_retry=wait_retry)
 
         if new_overflow_msgs:
@@ -752,17 +797,22 @@ class _TelegramTurnStreamCoordinator:
             return
         self.code_fence_len = fence_len
 
+
 async def _stream(dq, msg):
     stream = _TelegramTurnStreamCoordinator(msg)
     await stream.prime()
     try:
         while True:
-            try: first = await asyncio.to_thread(dq.get, True, _QUEUE_WAIT_SECONDS)
-            except Q.Empty: continue
+            try:
+                first = await asyncio.to_thread(dq.get, True, _QUEUE_WAIT_SECONDS)
+            except Q.Empty:
+                continue
             items = [first]
             try:
-                while True: items.append(dq.get_nowait())
-            except Q.Empty: pass
+                while True:
+                    items.append(dq.get_nowait())
+            except Q.Empty:
+                pass
             done_item = None
             for item in items:
                 chunk = item.get("next", "")
@@ -792,19 +842,28 @@ async def _stream(dq, msg):
         except RetryAfter as retry_exc:
             print(f"[TG stream error notice retry_after] {type(retry_exc).__name__}: {retry_exc}", flush=True)
 
+
 def _normalized_command(text):
     parts = (text or "").strip().split(None, 1)
-    if not parts: return ''
+    if not parts:
+        return ""
     head = parts[0].lower()
-    if head.startswith('/'): head = '/' + head[1:].split('@', 1)[0]
-    return head + (f" {parts[1].strip()}" if len(parts) > 1 and parts[1].strip() else '')
+    if head.startswith("/"):
+        head = "/" + head[1:].split("@", 1)[0]
+    return head + (f" {parts[1].strip()}" if len(parts) > 1 and parts[1].strip() else "")
+
 
 def _cancel_stream_task(ctx):
-    task = ctx.user_data.pop('stream_task', None)
-    if task and not task.done(): task.cancel()
+    task = ctx.user_data.pop("stream_task", None)
+    if task and not task.done():
+        task.cancel()
+
 
 async def _sync_commands(application):
-    await application.bot.set_my_commands([BotCommand(command, description) for command, description in TELEGRAM_MENU_COMMANDS])
+    await application.bot.set_my_commands(
+        [BotCommand(command, description) for command, description in TELEGRAM_MENU_COMMANDS]
+    )
+
 
 async def _reply_command_text(message, text):
     for segment in _markdown_safe_segments(text) or ["..."]:
@@ -814,19 +873,25 @@ async def _reply_command_text(message, text):
             print(f"[TG command markdown fallback] {type(exc).__name__}: {exc}", flush=True)
             await message.reply_text(segment)
 
+
 _DENY_ADMIN_URL = "your admin contact"
 
+
 def _deny_text(uid):
-    return ("🚫 你不在该 Bot 的访问白名单中。\n"
-            "如需使用，请将下方 ID 发给管理员申请加白：\n"
-            f"管理员：{_DENY_ADMIN_URL}\n"
-            f"你的 ID：{uid}")
+    return (
+        "🚫 你不在该 Bot 的访问白名单中。\n"
+        "如需使用，请将下方 ID 发给管理员申请加白：\n"
+        f"管理员：{_DENY_ADMIN_URL}\n"
+        f"你的 ID：{uid}"
+    )
+
 
 def _log_deny(update, scope):
     u = update.effective_user
     uname = f"@{u.username}" if u and u.username else (u.full_name if u else "?")
     uid = u.id if u else "?"
     print(f"[TG DENY] scope={scope} uid={uid} user={uname}", flush=True)
+
 
 async def handle_msg(update, ctx):
     uid = update.effective_user.id
@@ -836,7 +901,8 @@ async def handle_msg(update, ctx):
     prompt = _build_text_prompt(update.message.text)
     dq = agent.put_task(prompt, source="telegram")
     task = asyncio.create_task(_stream(dq, update.message))
-    ctx.user_data['stream_task'] = task
+    ctx.user_data["stream_task"] = task
+
 
 async def handle_ask_callback(update, ctx):
     query = update.callback_query
@@ -852,7 +918,7 @@ async def handle_ask_callback(update, ctx):
     data = query.data or ""
     if not data.startswith(_ASK_CALLBACK_PREFIX):
         return await query.answer("菜单无效")
-    payload = data[len(_ASK_CALLBACK_PREFIX):]
+    payload = data[len(_ASK_CALLBACK_PREFIX) :]
     parts = payload.split(":")
     menu_id = parts[0] if parts else ""
     rest = parts[1:]
@@ -885,9 +951,7 @@ async def handle_ask_callback(update, ctx):
         await query.answer()
         try:
             await query.edit_message_reply_markup(
-                reply_markup=_build_ask_user_markup(
-                    menu_id, candidates, multi=True, selected_indexes=selected
-                )
+                reply_markup=_build_ask_user_markup(menu_id, candidates, multi=True, selected_indexes=selected)
             )
         except Exception as exc:
             print(f"[TG ask_user toggle] {type(exc).__name__}: {exc}", flush=True)
@@ -908,7 +972,7 @@ async def handle_ask_callback(update, ctx):
             return
         dq = agent.put_task(_build_text_prompt(joined), source="telegram")
         task = asyncio.create_task(_stream(dq, query.message))
-        ctx.user_data['stream_task'] = task
+        ctx.user_data["stream_task"] = task
         return
 
     # 单选 cancel
@@ -934,22 +998,27 @@ async def handle_ask_callback(update, ctx):
         return
     dq = agent.put_task(_build_text_prompt(selected), source="telegram")
     task = asyncio.create_task(_stream(dq, query.message))
-    ctx.user_data['stream_task'] = task
+    ctx.user_data["stream_task"] = task
+
 
 async def cmd_abort(update, ctx):
     _cancel_stream_task(ctx)
     agent.abort()
     await update.message.reply_text("⏹️ 正在停止...")
 
+
 def _build_llm_markup(menu_id, llms):
     rows = [
-        [InlineKeyboardButton(
-            f"{'→ ' if cur else ''}[{i}] {name}",
-            callback_data=f"{_LLM_CALLBACK_PREFIX}{menu_id}:{i}",
-        )]
+        [
+            InlineKeyboardButton(
+                f"{'→ ' if cur else ''}[{i}] {name}",
+                callback_data=f"{_LLM_CALLBACK_PREFIX}{menu_id}:{i}",
+            )
+        ]
         for i, name, cur in llms
     ]
     return InlineKeyboardMarkup(rows)
+
 
 async def _send_llm_menu(target_msg):
     llms = list(agent.list_llms())
@@ -963,8 +1032,9 @@ async def _send_llm_menu(target_msg):
         reply_markup=_build_llm_markup(menu_id, llms),
     )
 
+
 async def cmd_llm(update, ctx):
-    args = (update.message.text or '').split()
+    args = (update.message.text or "").split()
     if len(args) > 1:
         try:
             n = int(args[1])
@@ -974,6 +1044,7 @@ async def cmd_llm(update, ctx):
             await update.message.reply_text(f"用法: /llm <0-{len(agent.list_llms())-1}>")
         return
     await _send_llm_menu(update.message)
+
 
 async def handle_llm_callback(update, ctx):
     query = update.callback_query
@@ -989,7 +1060,7 @@ async def handle_llm_callback(update, ctx):
     data = query.data or ""
     if not data.startswith(_LLM_CALLBACK_PREFIX):
         return await query.answer("菜单无效")
-    payload = data[len(_LLM_CALLBACK_PREFIX):]
+    payload = data[len(_LLM_CALLBACK_PREFIX) :]
     menu_id, sep, idx_str = payload.partition(":")
     if not sep or not menu_id or not idx_str:
         return await query.answer("菜单无效")
@@ -1019,6 +1090,7 @@ async def handle_llm_callback(update, ctx):
     except Exception as exc:
         print(f"[TG llm switch edit] {type(exc).__name__}: {exc}", flush=True)
 
+
 async def handle_photo(update, ctx):
     uid = update.effective_user.id
     if ALLOWED and uid not in ALLOWED:
@@ -1032,16 +1104,20 @@ async def handle_photo(update, ctx):
     elif update.message.document:
         doc = update.message.document
         file = await doc.get_file()
-        ext = os.path.splitext(doc.file_name or '')[1] or ''
+        ext = os.path.splitext(doc.file_name or "")[1] or ""
         fpath = f"tg_{doc.file_unique_id}{ext}"
         kind = "文件"
-    else: return
+    else:
+        return
     await file.download_to_drive(os.path.join(_TEMP_DIR, fpath))
     caption = update.message.caption
-    prompt = f"[TIPS] 收到{kind}temp/{fpath}\n{caption}" if caption else f"[TIPS] 收到{kind}temp/{fpath}，请等待下一步指令"
+    prompt = (
+        f"[TIPS] 收到{kind}temp/{fpath}\n{caption}" if caption else f"[TIPS] 收到{kind}temp/{fpath}，请等待下一步指令"
+    )
     dq = agent.put_task(prompt, source="telegram")
     task = asyncio.create_task(_stream(dq, update.message))
-    ctx.user_data['stream_task'] = task
+    ctx.user_data["stream_task"] = task
+
 
 async def handle_command(update, ctx):
     uid = update.effective_user.id
@@ -1049,20 +1125,25 @@ async def handle_command(update, ctx):
         _log_deny(update, "command")
         return await update.message.reply_text(_deny_text(uid))
     cmd = _normalized_command(update.message.text)
-    op = cmd.split()[0] if cmd else ''
-    if op == '/help': return await update.message.reply_text(HELP_TEXT)
-    if op == '/status':
-        llm = agent.get_llm_name() if agent.llmclient else '未配置'
-        return await update.message.reply_text(f"状态: {'🔴 运行中' if agent.is_running else '🟢 空闲'}\nLLM: [{agent.llm_no}] {llm}")
-    if op == '/stop': return await cmd_abort(update, ctx)
-    if op == '/llm': return await cmd_llm(update, ctx)
-    if op == '/btw':
+    op = cmd.split()[0] if cmd else ""
+    if op == "/help":
+        return await update.message.reply_text(HELP_TEXT)
+    if op == "/status":
+        llm = agent.get_llm_name() if agent.llmclient else "未配置"
+        return await update.message.reply_text(
+            f"状态: {'🔴 运行中' if agent.is_running else '🟢 空闲'}\nLLM: [{agent.llm_no}] {llm}"
+        )
+    if op == "/stop":
+        return await cmd_abort(update, ctx)
+    if op == "/llm":
+        return await cmd_llm(update, ctx)
+    if op == "/btw":
         answer = await asyncio.to_thread(handle_btw_frontend_command, agent, cmd)
         return await _reply_command_text(update.message, answer)
-    if op == '/new':
+    if op == "/new":
         _cancel_stream_task(ctx)
         return await update.message.reply_text(reset_conversation(agent))
-    if op == '/restore':
+    if op == "/restore":
         _cancel_stream_task(ctx)
         try:
             restored_info, err = format_restore()
@@ -1071,29 +1152,35 @@ async def handle_command(update, ctx):
             restored, fname, count = restored_info
             agent.abort()
             agent.history.extend(restored)
-            return await update.message.reply_text(f"✅ 已恢复 {count} 轮对话\n来源: {fname}\n(仅恢复上下文，请输入新问题继续)")
+            return await update.message.reply_text(
+                f"✅ 已恢复 {count} 轮对话\n来源: {fname}\n(仅恢复上下文，请输入新问题继续)"
+            )
         except Exception as e:
             return await update.message.reply_text(f"❌ 恢复失败: {e}")
-    if op == '/continue':
-        if cmd != '/continue': _cancel_stream_task(ctx)
+    if op == "/continue":
+        if cmd != "/continue":
+            _cancel_stream_task(ctx)
         return await update.message.reply_text(handle_frontend_command(agent, cmd))
     return await update.message.reply_text(HELP_TEXT)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     _LOCK_SOCK = ensure_single_instance(19527, "Telegram")
-    if not ALLOWED: 
-        print('[Telegram] ERROR: tg_allowed_users in mykey.py is empty or missing. Set it to avoid unauthorized access.')
+    if not ALLOWED:
+        print(
+            "[Telegram] ERROR: tg_allowed_users in mykey.py is empty or missing. Set it to avoid unauthorized access."
+        )
         sys.exit(1)
     require_runtime(agent, "Telegram", tg_bot_token=mykeys.get("tg_bot_token"))
     redirect_log(__file__, "tgapp.log", "Telegram", ALLOWED)
     register_hook(agent, _ASK_USER_HOOK_KEY, lambda _ctx: _ASK_OWNER, "telegram", _BUS.put)
     start_gc_timer(_BUS)
     threading.Thread(target=agent.run, daemon=True).start()
-    proxy = mykeys.get('proxy')
+    proxy = mykeys.get("proxy")
     if proxy:
-        print('proxy:', proxy)
+        print("proxy:", proxy)
     else:
-        print('proxy: <disabled>')
+        print("proxy: <disabled>")
 
     async def _error_handler(update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[{time.strftime('%m-%d %H:%M')}] TG error: {context.error}", flush=True)
@@ -1104,10 +1191,16 @@ if __name__ == '__main__':
             # Recreate request and app objects on each restart to avoid stale connections
             request_kwargs = dict(read_timeout=30, write_timeout=30, connect_timeout=30, pool_timeout=30)
             if proxy:
-                request_kwargs['proxy'] = proxy
+                request_kwargs["proxy"] = proxy
             request = HTTPXRequest(**request_kwargs)
-            app = (ApplicationBuilder().token(mykeys['tg_bot_token'])
-                   .request(request).get_updates_request(request).post_init(_sync_commands).build())
+            app = (
+                ApplicationBuilder()
+                .token(mykeys["tg_bot_token"])
+                .request(request)
+                .get_updates_request(request)
+                .post_init(_sync_commands)
+                .build()
+            )
             app.add_handler(CallbackQueryHandler(handle_ask_callback, pattern=r"^ask:"))
             app.add_handler(CallbackQueryHandler(handle_llm_callback, pattern=r"^llm:"))
             app.add_handler(MessageHandler(filters.COMMAND, handle_command))

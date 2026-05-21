@@ -1,4 +1,13 @@
-import ast, asyncio, glob, json, os, queue as Q, re, socket, sys, time
+import ast
+import asyncio
+import glob
+import json
+import os
+import queue as Q
+import re
+import socket
+import sys
+import time
 
 # 确保能导入上级目录的模块（如 g_agent.agent）
 _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -46,16 +55,16 @@ RESTORE_GLOBS = (
 # channel sidecar: <log>.txt -> <log>.channel (单行内容 = fs/wechat/wecom/tg/dc/dingtalk/qq/qt/st/tui/unknown)
 # 历史日志无 sidecar 时, restore 第一次扫描首 16KB 按指纹懒回填
 CHANNEL_FINGERPRINTS = (
-    ("fs",       re.compile(r"feishu|飞书|FS-ASK|lark_oapi|open_id", re.I)),
-    ("wecom",    re.compile(r"wecom|企业微信|qyapi\.weixin", re.I)),
-    ("wechat",   re.compile(r"wxid_|微信|wechatapp|gewechat", re.I)),
-    ("tg",       re.compile(r"telegram|tg_chat|tgapp", re.I)),
-    ("dc",       re.compile(r"discord|dcapp", re.I)),
+    ("fs", re.compile(r"feishu|飞书|FS-ASK|lark_oapi|open_id", re.I)),
+    ("wecom", re.compile(r"wecom|企业微信|qyapi\.weixin", re.I)),
+    ("wechat", re.compile(r"wxid_|微信|wechatapp|gewechat", re.I)),
+    ("tg", re.compile(r"telegram|tg_chat|tgapp", re.I)),
+    ("dc", re.compile(r"discord|dcapp", re.I)),
     ("dingtalk", re.compile(r"dingtalk|钉钉|dingtalkapp", re.I)),
-    ("qq",       re.compile(r"qqapp|mirai|napcat", re.I)),
-    ("qt",       re.compile(r"qtapp|PySide6", re.I)),
-    ("st",       re.compile(r"streamlit|stapp", re.I)),
-    ("tui",      re.compile(r"tuiapp|tui_v3|Textual", re.I)),
+    ("qq", re.compile(r"qqapp|mirai|napcat", re.I)),
+    ("qt", re.compile(r"qtapp|PySide6", re.I)),
+    ("st", re.compile(r"streamlit|stapp", re.I)),
+    ("tui", re.compile(r"tuiapp|tui_v3|Textual", re.I)),
 )
 
 
@@ -96,6 +105,8 @@ def write_channel_sidecar(log_path, channel=None):
             f.write(channel)
     except Exception:
         pass
+
+
 RESTORE_BLOCK_RE = re.compile(
     r"^=== (Prompt|Response) ===.*?\n(.*?)(?=^=== (?:Prompt|Response) ===|\Z)",
     re.DOTALL | re.MULTILINE,
@@ -195,7 +206,7 @@ def _native_first_user_line(prompt_text):
     if not text or "<history>" in text or text.startswith("### [WORKING MEMORY]"):
         return ""
     if text.startswith(FILE_HINT):
-        text = text[len(FILE_HINT):].lstrip()
+        text = text[len(FILE_HINT) :].lstrip()
     if "### 用户当前消息" in text:
         text = text.split("### 用户当前消息", 1)[-1].strip()
     return text
@@ -359,14 +370,20 @@ class AgentChatMixin:
             return await self.send_text(chat_id, "⏹️ 正在停止...", **ctx)
         if op == "/status":
             llm = self.agent.get_llm_name() if self.agent.llmclient else "未配置"
-            return await self.send_text(chat_id, f"状态: {'🔴 运行中' if self.agent.is_running else '🟢 空闲'}\nLLM: [{self.agent.llm_no}] {llm}", **ctx)
+            return await self.send_text(
+                chat_id,
+                f"状态: {'🔴 运行中' if self.agent.is_running else '🟢 空闲'}\nLLM: [{self.agent.llm_no}] {llm}",
+                **ctx,
+            )
         if op == "/llm":
             if not self.agent.llmclient:
                 return await self.send_text(chat_id, "❌ 当前没有可用的 LLM 配置", **ctx)
             if len(parts) > 1:
                 try:
                     self.agent.next_llm(int(parts[1]))
-                    return await self.send_text(chat_id, f"✅ 已切换到 [{self.agent.llm_no}] {self.agent.get_llm_name()}", **ctx)
+                    return await self.send_text(
+                        chat_id, f"✅ 已切换到 [{self.agent.llm_no}] {self.agent.get_llm_name()}", **ctx
+                    )
                 except Exception:
                     return await self.send_text(chat_id, f"用法: /llm <0-{len(self.agent.list_llms()) - 1}>", **ctx)
             lines = [f"{'→' if cur else '  '} [{i}] {name}" for i, name, cur in self.agent.list_llms()]
@@ -379,7 +396,9 @@ class AgentChatMixin:
                 restored, fname, count = restored_info
                 self.agent.abort()
                 self.agent.history.extend(restored)
-                return await self.send_text(chat_id, f"✅ 已恢复 {count} 轮对话\n来源: {fname}\n(仅恢复上下文，请输入新问题继续)", **ctx)
+                return await self.send_text(
+                    chat_id, f"✅ 已恢复 {count} 轮对话\n来源: {fname}\n(仅恢复上下文，请输入新问题继续)", **ctx
+                )
             except Exception as e:
                 return await self.send_text(chat_id, f"❌ 恢复失败: {e}", **ctx)
         if op == "/continue":
@@ -421,6 +440,7 @@ class AgentChatMixin:
                 await self.send_text(chat_id, "⏹️ 已停止", **ctx)
         except Exception as e:
             import traceback
+
             print(f"[{self.label}] run_agent error: {e}")
             traceback.print_exc()
             await self.send_text(chat_id, f"❌ 错误: {e}", **ctx)
@@ -429,7 +449,16 @@ class AgentChatMixin:
 
 
 from g_agent.agent import Agent as _GA
-from continue_cmd import handle_frontend_command as _handle_continue_frontend, install as _install_continue, reset_conversation as _reset_conversation
+from continue_cmd import (
+    handle_frontend_command as _handle_continue_frontend,
+    install as _install_continue,
+    reset_conversation as _reset_conversation,
+)
+
 _install_continue(_GA)
-from btw_cmd import handle_frontend_command as _handle_btw_frontend, install as _install_btw; _install_btw(_GA)
-from review_cmd import install as _install_review; _install_review(_GA)
+from btw_cmd import handle_frontend_command as _handle_btw_frontend, install as _install_btw
+
+_install_btw(_GA)
+from review_cmd import install as _install_review
+
+_install_review(_GA)

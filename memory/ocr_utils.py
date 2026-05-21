@@ -6,38 +6,46 @@
 - 坑: enhance 放大+高对比度处理，对清晰文字有害，默认关闭
 - 坑(远程桌面): ImageGrab/mss 在 RDP 断开后截图全黑，用 ocr_window(hwnd) 代替
 """
+
 import re
 from PIL import ImageGrab, Image, ImageEnhance
 
-_LANG = 'zh-Hans-CN'
+_LANG = "zh-Hans-CN"
 _rapid_engine = None
+
 
 def _get_rapid():
     global _rapid_engine
     if _rapid_engine is None:
         from rapidocr_onnxruntime import RapidOCR
+
         _rapid_engine = RapidOCR()
     return _rapid_engine
+
 
 def _preprocess(img, scale=3, contrast=3.0):
     img = ImageEnhance.Contrast(img).enhance(contrast)
     img = img.resize((img.width * scale, img.height * scale))
     return img
 
+
 def _strip_cjk_spaces(t):
-    return re.sub(r'(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])', '', t)
+    return re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", t)
+
 
 def _ocr_rapid(img):
     import numpy as np
+
     engine = _get_rapid()
     arr = np.array(img)
     result, elapse = engine(arr)
     if not result:
-        return {'text': '', 'lines': [], 'details': []}
+        return {"text": "", "lines": [], "details": []}
     lines = [r[1] for r in result]
-    details = [{'bbox': r[0], 'text': r[1], 'conf': float(r[2])} for r in result]
-    text = _strip_cjk_spaces('\n'.join(lines))
-    return {'text': text, 'lines': [_strip_cjk_spaces(l) for l in lines], 'details': details}
+    details = [{"bbox": r[0], "text": r[1], "conf": float(r[2])} for r in result]
+    text = _strip_cjk_spaces("\n".join(lines))
+    return {"text": text, "lines": [_strip_cjk_spaces(l) for l in lines], "details": details}
+
 
 def ocr_image(image_input, lang=_LANG, enhance=False, engine=None):
     """
@@ -52,9 +60,10 @@ def ocr_image(image_input, lang=_LANG, enhance=False, engine=None):
         image_input = Image.open(image_input)
     if enhance:
         image_input = _preprocess(image_input)
-    if engine not in (None, 'rapid'):
+    if engine not in (None, "rapid"):
         raise ValueError("Only rapid OCR is supported")
     return _ocr_rapid(image_input)
+
 
 def ocr_screen(bbox=None, lang=_LANG, enhance=False, engine=None):
     """
@@ -65,14 +74,17 @@ def ocr_screen(bbox=None, lang=_LANG, enhance=False, engine=None):
     img = ImageGrab.grab(bbox=bbox)
     return ocr_image(img, lang, enhance, engine)
 
+
 def ocr_window(hwnd, lang=_LANG, enhance=False, engine=None):
     """
     截取窗口并 OCR (使用 PrintWindow API，支持远程桌面断开场景)
     :param hwnd: 窗口句柄(int)
     :return: dict {'text': 全文, 'lines': [行文本], 'details': [bbox+conf](仅rapid)}
     """
-    import win32gui, win32ui
+    import win32gui
+    import win32ui
     from ctypes import windll
+
     l, t, r, b = win32gui.GetWindowRect(hwnd)
     w, h = r - l, b - t
     hwndDC = win32gui.GetWindowDC(hwnd)
@@ -84,18 +96,19 @@ def ocr_window(hwnd, lang=_LANG, enhance=False, engine=None):
     windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), 3)
     bmpinfo = saveBitMap.GetInfo()
     bmpstr = saveBitMap.GetBitmapBits(True)
-    img = Image.frombuffer('RGB', (bmpinfo['bmWidth'], bmpinfo['bmHeight']), bmpstr, 'raw', 'BGRX', 0, 1)
+    img = Image.frombuffer("RGB", (bmpinfo["bmWidth"], bmpinfo["bmHeight"]), bmpstr, "raw", "BGRX", 0, 1)
     win32gui.DeleteObject(saveBitMap.GetHandle())
     saveDC.DeleteDC()
     mfcDC.DeleteDC()
     win32gui.ReleaseDC(hwnd, hwndDC)
     return ocr_image(img, lang, enhance, engine)
 
+
 if __name__ == "__main__":
     r = ocr_screen((0, 0, 400, 100))
     print(f"识别结果: {r['text']}")
-    for line in r['lines']:
+    for line in r["lines"]:
         print(f"  行: {line}")
-    if 'details' in r:
-        for d in r['details']:
+    if "details" in r:
+        for d in r["details"]:
             print(f"  [{d['conf']:.3f}] {d['text']}")

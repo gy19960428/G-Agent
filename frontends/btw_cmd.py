@@ -6,8 +6,12 @@
 
 复用 backend.raw_ask + make_messages，不新建 LLM 实例。
 """
+
 from __future__ import annotations
-import copy, os, threading, time
+import copy
+import os
+import threading
+import time
 from typing import Optional
 
 
@@ -44,18 +48,21 @@ Question:
 _TIMEOUT_SEC = 120
 
 
-def _wrapper(): return _WRAPPER_EN if os.environ.get('G_AGENT_LANG') == 'en' else _WRAPPER_ZH
+def _wrapper():
+    return _WRAPPER_EN if os.environ.get("G_AGENT_LANG") == "en" else _WRAPPER_ZH
 
 
 def _strip_cmd(query):
-    s = (query or '').strip()
-    return s[len('/btw'):].strip() if s.startswith('/btw') else s
+    s = (query or "").strip()
+    return s[len("/btw") :].strip() if s.startswith("/btw") else s
 
 
 def _help_text():
-    return ('**/btw 用法**：side question — 临时问主 agent 当前进展，不打断主线\n\n'
-            '`/btw <你的问题>`\n\n'
-            '行为：抓取当前对话上下文 → 单轮纯文本作答（无工具）→ 主 agent 历史不变。')
+    return (
+        "**/btw 用法**：side question — 临时问主 agent 当前进展，不打断主线\n\n"
+        "`/btw <你的问题>`\n\n"
+        "行为：抓取当前对话上下文 → 单轮纯文本作答（无工具）→ 主 agent 历史不变。"
+    )
 
 
 def _snapshot_history(backend):
@@ -68,7 +75,7 @@ def _build_wire(backend, history, sidequest_msg):
     """history + sidequest → wire-format. Dispatches: BaseSession subclasses → make_messages,
     Native* → raw pairs (raw_ask runs _fix/_drop/_ensure transforms itself)."""
     msgs = history + [sidequest_msg]
-    if hasattr(backend, 'make_messages'):
+    if hasattr(backend, "make_messages"):
         return backend.make_messages(msgs)
     return [{"role": m["role"], "content": list(m.get("content", []))} for m in msgs]
 
@@ -76,49 +83,50 @@ def _build_wire(backend, history, sidequest_msg):
 def _ask(agent, question, deadline):
     """One-shot raw_ask against current backend; never mutates backend.history."""
     backend = agent.llmclient.backend
-    user_msg = {"role": "user",
-                "content": [{"type": "text", "text": _wrapper().format(question=question)}]}
+    user_msg = {"role": "user", "content": [{"type": "text", "text": _wrapper().format(question=question)}]}
     wire = _build_wire(backend, _snapshot_history(backend), user_msg)
-    text = ''
+    text = ""
     for chunk in backend.raw_ask(wire):
         text += chunk
         if time.time() > deadline:
-            return text + '\n\n⚠️ /btw 超时，仅返回部分回复。'
+            return text + "\n\n⚠️ /btw 超时，仅返回部分回复。"
     return text
 
 
 def _format(question, body, took):
-    head = f'> 🟡 /btw {question}\n\n'
-    return head + (body.strip() or '*(空回复)*') + f'\n\n*({took:.1f}s)*'
+    head = f"> 🟡 /btw {question}\n\n"
+    return head + (body.strip() or "*(空回复)*") + f"\n\n*({took:.1f}s)*"
 
 
 def _run(agent, question, deadline):
     """Catches errors at the boundary so neither caller path needs its own try/except."""
-    try: return _ask(agent, question, deadline)
-    except Exception as e: return f'❌ /btw 失败: {type(e).__name__}: {e}'
+    try:
+        return _ask(agent, question, deadline)
+    except Exception as e:
+        return f"❌ /btw 失败: {type(e).__name__}: {e}"
 
 
 def handle(agent, query, display_queue) -> Optional[str]:
     """Slash-cmd entry (server-side, install path). Spawn worker; return None to consume."""
     question = _strip_cmd(query)
-    if not question or question in ('help', '?', '-h', '--help'):
-        display_queue.put({'done': _help_text(), 'source': 'system'})
+    if not question or question in ("help", "?", "-h", "--help"):
+        display_queue.put({"done": _help_text(), "source": "system"})
         return None
     started = time.time()
     deadline = started + _TIMEOUT_SEC
 
     def worker():
         body = _run(agent, question, deadline)
-        display_queue.put({'done': _format(question, body, time.time() - started), 'source': 'system'})
+        display_queue.put({"done": _format(question, body, time.time() - started), "source": "system"})
 
-    threading.Thread(target=worker, daemon=True, name='btw-sidequest').start()
+    threading.Thread(target=worker, daemon=True, name="btw-sidequest").start()
     return None
 
 
 def handle_frontend_command(agent, query) -> str:
     """Sync entry for frontends wanting a string back (tg/wx/stapp/...)."""
     question = _strip_cmd(query)
-    if not question or question in ('help', '?', '-h', '--help'):
+    if not question or question in ("help", "?", "-h", "--help"):
         return _help_text()
     started = time.time()
     body = _run(agent, question, started + _TIMEOUT_SEC)
@@ -128,13 +136,15 @@ def handle_frontend_command(agent, query) -> str:
 def install(cls):
     """Idempotent monkey-patch: intercept /btw before original dispatch."""
     orig = cls._handle_slash_cmd
-    if getattr(orig, '_btw_patched', False): return
+    if getattr(orig, "_btw_patched", False):
+        return
 
     def patched(self, raw_query, display_queue):
-        s = (raw_query or '').strip()
-        if s == '/btw' or s.startswith('/btw ') or s.startswith('/btw\t'):
+        s = (raw_query or "").strip()
+        if s == "/btw" or s.startswith("/btw ") or s.startswith("/btw\t"):
             r = handle(self, raw_query, display_queue)
-            if r is None: return None
+            if r is None:
+                return None
             return r
         return orig(self, raw_query, display_queue)
 

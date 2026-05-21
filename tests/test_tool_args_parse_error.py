@@ -1,9 +1,9 @@
 """S1.3 验证: _try_parse_tool_args 失败显式 _parse_error;BaseHandler.dispatch 短路。"""
+
 import sys
 import importlib
 from pathlib import Path
 
-import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:

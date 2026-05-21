@@ -8,10 +8,10 @@
 
 注意：code_run 是 generator，最终 dict 在 StopIteration.value 里。
 """
+
 import os
 import sys
 import glob
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -41,8 +41,7 @@ def test_code_run_unsupported_type_returns_error_dict(tmp_path):
 
 def test_code_run_python_short_script_ok_and_tmpfile_cleaned(tmp_path):
     code = "print('hello-smoke')\n"
-    gen = code_exec.code_run(code, code_type="python", timeout=15,
-                             cwd=str(tmp_path), code_cwd=str(tmp_path))
+    gen = code_exec.code_run(code, code_type="python", timeout=15, cwd=str(tmp_path), code_cwd=str(tmp_path))
     result, _ = _drain(gen)
     assert result["status"] == "success", result
     assert result["exit_code"] == 0
@@ -55,8 +54,7 @@ def test_code_run_python_short_script_ok_and_tmpfile_cleaned(tmp_path):
 def test_code_run_bash_echo_ok(tmp_path):
     if os.name == "nt":
         pytest.skip("bash 分支仅 POSIX 跑")
-    gen = code_exec.code_run("echo bash-smoke", code_type="bash",
-                             timeout=10, cwd=str(tmp_path))
+    gen = code_exec.code_run("echo bash-smoke", code_type="bash", timeout=10, cwd=str(tmp_path))
     result, _ = _drain(gen)
     assert result["status"] == "success", result
     assert result["exit_code"] == 0
@@ -66,8 +64,7 @@ def test_code_run_bash_echo_ok(tmp_path):
 def test_code_run_timeout_kills_process(tmp_path):
     # python 睡 10s，timeout=1 应被 kill；while 循环每秒检测一次，给 2.5s 余量
     code = "import time; time.sleep(10); print('should-not-print')\n"
-    gen = code_exec.code_run(code, code_type="python", timeout=1,
-                             cwd=str(tmp_path), code_cwd=str(tmp_path))
+    gen = code_exec.code_run(code, code_type="python", timeout=1, cwd=str(tmp_path), code_cwd=str(tmp_path))
     result, _ = _drain(gen)
     assert result["status"] == "error", result
     assert "[Timeout Error]" in result["stdout"]

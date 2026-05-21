@@ -1,10 +1,9 @@
 """_inline_eval 单元测试：覆盖 eval / exec / 异常吞掉 / cwd 还原 / chdir 异常路径还原。"""
+
 import os
 import sys
-import types
 from pathlib import Path
 
-import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
