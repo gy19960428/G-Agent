@@ -502,10 +502,6 @@ if __name__ == "__main__":
                 print("[Reflect] ONCE=True, exiting.")
                 break
     else:
-        try:
-            pass
-        except Exception:
-            pass
         agent.inc_out = True
         if sys.stdout.isatty():
             try:

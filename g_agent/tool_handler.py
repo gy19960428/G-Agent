@@ -78,7 +78,7 @@ class ToolHandler(BaseHandler):
                 return StepOutcome("[Error] Code missing. Must use reply code block or 'script' arg.", next_prompt="\n")
         try:
             timeout = int(args.get("timeout", 60))
-        except:
+        except (ValueError, TypeError):
             timeout = 60
         raw_path = os.path.join(self.cwd, args.get("cwd", "./"))
         cwd = os.path.normpath(os.path.abspath(raw_path))
@@ -139,13 +139,13 @@ class ToolHandler(BaseHandler):
                 with open(abs_path, "w", encoding="utf-8") as f:
                     f.write(str(content))
                 result["js_return"] += f"\n\n[已保存完整内容到 {abs_path}]"
-            except:
-                result["js_return"] += f"\n\n[保存失败，无法写入文件 {abs_path}]"
+            except OSError as e:
+                result["js_return"] += f"\n\n[保存失败，无法写入文件 {abs_path}: {e!r}]"
         show = smart_format(json.dumps(result, ensure_ascii=False, indent=2, default=json_default), max_str_len=300)
         try:
             print("Web Execute JS Result:", show)
-        except:
-            pass
+        except Exception:
+            pass  # console encoding fallback
         yield f"JS 执行结果:\n{show}\n"
         next_prompt = self._get_anchor_prompt(skip=args.get("_index", 0) > 0)
         result = json.dumps(result, ensure_ascii=False, default=json_default)
@@ -258,7 +258,7 @@ class ToolHandler(BaseHandler):
             return None
         try:
             return len(re.findall(r"\[ \]", open(p, encoding="utf-8", errors="replace").read()))
-        except:
+        except OSError:
             return None
 
     def do_update_working_checkpoint(self, args, response):
@@ -396,8 +396,8 @@ class ToolHandler(BaseHandler):
         if getattr(self.parent, "verbose", False):
             try:
                 print(prompt)
-            except:
-                pass
+            except Exception:
+                pass  # console encoding fallback
         return prompt
 
     def turn_end_callback(self, response, tool_calls, tool_results, turn, next_prompt, exit_reason):
