@@ -183,17 +183,27 @@ def web_execute_js(script, switch_tab_id=None, no_monitor=False):
         return result
     except Exception as e: return {"status": "error", "msg": format_error(e)}
 
+EXPAND_FILE_REFS_MAX_BYTES = 2 * 1024 * 1024  # 单次引用文件大小上限 2MB，防误展开巨型文件
+
 def expand_file_refs(text, base_dir=None):
     """展开文本中的 {{file:路径:起始行:结束行}} 引用为实际文件内容。
     可与普通文本混排。展开失败抛 ValueError。
-    base_dir: 相对路径的基准目录，默认为进程 cwd"""
+    base_dir: 相对路径的基准目录，默认为进程 cwd。
+    沙箱：解析后的 realpath 必须位于 realpath(base_dir or cwd) 内，且文件 <= 2MB。"""
     pattern = r'\{\{file:(.+?):(\d+):(\d+)\}\}'
+    base_real = os.path.realpath(base_dir or os.getcwd())
     def replacer(match):
-        path, start, end = match.group(1), int(match.group(2)), int(match.group(3))
-        path = os.path.abspath(os.path.join(base_dir or '.', path))
-        if not os.path.isfile(path): raise ValueError(f"引用文件不存在: {path}")
-        with open(path, 'r', encoding='utf-8') as f: lines = f.readlines()
-        if start < 1 or end > len(lines) or start > end: raise ValueError(f"行号越界: {path} 共{len(lines)}行, 请求{start}-{end}")
+        raw_path, start, end = match.group(1), int(match.group(2)), int(match.group(3))
+        joined = os.path.join(base_dir or '.', raw_path)
+        target_real = os.path.realpath(joined)
+        if target_real != base_real and not target_real.startswith(base_real + os.sep):
+            raise ValueError(f"引用文件超出沙箱: {target_real} (base={base_real})")
+        if not os.path.isfile(target_real): raise ValueError(f"引用文件不存在: {target_real}")
+        size = os.path.getsize(target_real)
+        if size > EXPAND_FILE_REFS_MAX_BYTES:
+            raise ValueError(f"引用文件超过 {EXPAND_FILE_REFS_MAX_BYTES} 字节上限: {target_real} ({size} bytes)")
+        with open(target_real, 'r', encoding='utf-8') as f: lines = f.readlines()
+        if start < 1 or end > len(lines) or start > end: raise ValueError(f"行号越界: {target_real} 共{len(lines)}行, 请求{start}-{end}")
         return ''.join(lines[start-1:end])
     return re.sub(pattern, replacer, text)
     
