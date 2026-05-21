@@ -8,7 +8,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from g_agent.llm import reload_mykeys, LLMSession, ToolClient, ClaudeSession, MixinSession, NativeToolClient, NativeClaudeSession, NativeOAISession, resolve_client
 from g_agent.loop import agent_runner_loop
-from g_agent.tool_handler import ToolHandler, smart_format, get_global_memory, format_error, consume_file
+from g_agent.tool_handler import ToolHandler, get_global_memory
+from g_agent.tools.user_io import smart_format, format_error, consume_file
 from g_agent.feishu_events import (
     _feishu_progress_display, _feishu_turn_summaries, _feishu_event,
     _feishu_progress_event, _feishu_done_event, _feishu_final_event, _feishu_error_event,

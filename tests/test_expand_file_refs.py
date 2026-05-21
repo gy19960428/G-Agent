@@ -12,7 +12,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-import g_agent.tool_handler as th  # noqa: E402
+import g_agent.tools.file_ops as fo  # noqa: E402
 
 
 def _ref(path: str, start: int, end: int) -> str:
@@ -28,7 +28,7 @@ def _write(p: Path, content: str):
 def test_expand_normal_inline_mix(tmp_path):
     _write(tmp_path / "a.txt", "L1\nL2\nL3\nL4\n")
     text = "before\n" + _ref("a.txt", 2, 3) + "\nafter"
-    out = th.expand_file_refs(text, base_dir=str(tmp_path))
+    out = fo.expand_file_refs(text, base_dir=str(tmp_path))
     assert out == "before\nL2\nL3\n\nafter"
 
 
@@ -38,7 +38,7 @@ def test_expand_rejects_escape_via_relative_path(tmp_path):
     try:
         text = _ref("../" + outer.name, 1, 1)
         with pytest.raises(ValueError, match="超出沙箱"):
-            th.expand_file_refs(text, base_dir=str(tmp_path))
+            fo.expand_file_refs(text, base_dir=str(tmp_path))
     finally:
         outer.unlink(missing_ok=True)
 
@@ -51,7 +51,7 @@ def test_expand_rejects_escape_via_symlink(tmp_path):
         os.symlink(outer, link)
         text = _ref("link.txt", 1, 1)
         with pytest.raises(ValueError, match="超出沙箱"):
-            th.expand_file_refs(text, base_dir=str(tmp_path))
+            fo.expand_file_refs(text, base_dir=str(tmp_path))
     finally:
         outer.unlink(missing_ok=True)
 
@@ -62,33 +62,33 @@ def test_expand_rejects_absolute_path_outside(tmp_path):
     try:
         text = _ref(str(outer), 1, 1)
         with pytest.raises(ValueError, match="超出沙箱"):
-            th.expand_file_refs(text, base_dir=str(tmp_path))
+            fo.expand_file_refs(text, base_dir=str(tmp_path))
     finally:
         outer.unlink(missing_ok=True)
 
 
 def test_expand_missing_file(tmp_path):
     with pytest.raises(ValueError, match="不存在"):
-        th.expand_file_refs(_ref("nope.txt", 1, 1), base_dir=str(tmp_path))
+        fo.expand_file_refs(_ref("nope.txt", 1, 1), base_dir=str(tmp_path))
 
 
 def test_expand_line_range_out_of_bounds(tmp_path):
     _write(tmp_path / "small.txt", "only one line\n")
     with pytest.raises(ValueError, match="行号越界"):
-        th.expand_file_refs(_ref("small.txt", 1, 5), base_dir=str(tmp_path))
+        fo.expand_file_refs(_ref("small.txt", 1, 5), base_dir=str(tmp_path))
     with pytest.raises(ValueError, match="行号越界"):
-        th.expand_file_refs(_ref("small.txt", 0, 1), base_dir=str(tmp_path))
+        fo.expand_file_refs(_ref("small.txt", 0, 1), base_dir=str(tmp_path))
     with pytest.raises(ValueError, match="行号越界"):
-        th.expand_file_refs(_ref("small.txt", 3, 2), base_dir=str(tmp_path))
+        fo.expand_file_refs(_ref("small.txt", 3, 2), base_dir=str(tmp_path))
 
 
 def test_expand_rejects_oversize_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(th, "EXPAND_FILE_REFS_MAX_BYTES", 64)
+    monkeypatch.setattr(fo, "EXPAND_FILE_REFS_MAX_BYTES", 64)
     _write(tmp_path / "big.txt", "x" * 200 + "\n")
     with pytest.raises(ValueError, match="字节上限"):
-        th.expand_file_refs(_ref("big.txt", 1, 1), base_dir=str(tmp_path))
+        fo.expand_file_refs(_ref("big.txt", 1, 1), base_dir=str(tmp_path))
 
 
 def test_expand_no_refs_returns_original(tmp_path):
     text = "plain text without any refs"
-    assert th.expand_file_refs(text, base_dir=str(tmp_path)) == text
+    assert fo.expand_file_refs(text, base_dir=str(tmp_path)) == text

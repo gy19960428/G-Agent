@@ -11,29 +11,11 @@ from g_agent.loop import BaseHandler, StepOutcome, json_default
 script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-# 工具实现已拆分到 g_agent.tools 子包，这里 re-export 保持外部 import 路径兼容
-from g_agent.tools.user_io import *  # noqa: F401,F403
-from g_agent.tools.file_ops import *  # noqa: F401,F403
-from g_agent.tools.code_exec import *  # noqa: F401,F403
-from g_agent.tools.web_ops import *  # noqa: F401,F403
-# 兼容直接属性访问（旧代码可能 from g_agent.tool_handler import driver 等）
-from g_agent.tools import web_ops as _web_ops  # noqa: F401
-from g_agent.tools import file_ops as _file_ops  # noqa: F401
-
-# 单测可能 monkeypatch.setattr(tool_handler, "EXPAND_FILE_REFS_MAX_BYTES", N)，
-# 拆分后 expand_file_refs 走 file_ops 模块全局，需要把对本模块的属性写入同步过去。
-import sys as _sys
-import types as _types
-class _ToolHandlerModule(_types.ModuleType):
-    _SYNC_TO_FILE_OPS = {"EXPAND_FILE_REFS_MAX_BYTES"}
-    _SYNC_TO_WEB_OPS = {"driver"}
-    def __setattr__(self, key, value):
-        super().__setattr__(key, value)
-        if key in self._SYNC_TO_FILE_OPS:
-            setattr(_file_ops, key, value)
-        if key in self._SYNC_TO_WEB_OPS:
-            setattr(_web_ops, key, value)
-_sys.modules[__name__].__class__ = _ToolHandlerModule
+# 工具实现已拆分到 g_agent.tools 子包，按需具名导入本模块内部用到的符号
+from g_agent.tools.user_io import smart_format, format_error, consume_file, log_memory_access
+from g_agent.tools.file_ops import expand_file_refs
+from g_agent.tools.code_exec import code_run
+from g_agent.tools.web_ops import web_scan, web_execute_js
 
 
 # _inline_eval 用 contextlib.chdir，chdir 是进程级状态；多线程并发执行会相互踩 cwd。
