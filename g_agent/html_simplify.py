@@ -3,6 +3,8 @@ try:
 except ImportError:
     print("[Error] BeautifulSoup4 未安装，请叫Agent安装BeautifulSoup4，再使用web相关工具。")
 
+from typing import Any
+
 js_optHTML = r"""function optHTML(text_only=false) {
 function createEnhancedDOMCopy() {  
   const nodeInfo = new WeakMap();  
@@ -607,17 +609,19 @@ def optimize_html_for_tokens(html):
     [tag.attrs.pop("style", None) for tag in soup.find_all(True)]
     for tag in soup.find_all(True):
         if tag.has_attr("src"):
-            if tag["src"].startswith("data:"):
+            src_val = str(tag["src"])
+            if src_val.startswith("data:"):
                 tag["src"] = "__img__"
-            elif len(tag["src"]) > 30:
+            elif len(src_val) > 30:
                 tag["src"] = "__url__"
         if tag.has_attr("href") and len(tag["href"]) > 30:
             tag["href"] = "__link__"
         if tag.has_attr("action") and len(tag["action"]) > 30:
             tag["action"] = "__url__"
         for a in ("value", "title", "alt"):
-            if tag.has_attr(a) and isinstance(tag[a], str) and len(tag[a]) > 100:
-                tag[a] = tag[a][:50] + " ..."
+            val = tag.get(a)
+            if isinstance(val, str) and len(val) > 100:
+                tag[a] = val[:50] + " ..."
         for attr in list(tag.attrs.keys()):
             if attr not in [
                 "id",
@@ -730,7 +734,7 @@ def find_changed_elements(before_html, after_html):
         return f"{el.name}:{attrs}:{direct_text(el)}"
 
     def build_sigs(soup):
-        result = {}
+        result: dict[str, list] = {}
         for el in soup.find_all(True):
             sig = get_sig(el)
             result.setdefault(sig, []).append(el)
@@ -752,7 +756,7 @@ def find_changed_elements(before_html, after_html):
     cids = set(id(el) for el in changed)
     boundaries = [el for el in changed if el.parent is None or id(el.parent) not in cids]
     top = max(boundaries, key=lambda el: len(str(el))) if boundaries else None
-    result = {"changed": len(changed)}
+    result: dict[str, Any] = {"changed": len(changed)}
     if top:
         h = str(top)
         result["top_change"] = h if len(h) <= 2000 else h[:2000] + "...[TRUNCATED]"

@@ -45,5 +45,18 @@ build-backend = "setuptools.build_meta"
 py-modules = []
 packages = ["g_agent_cli"]
 
+[tool.mypy]
+# 渐进式: 先建立反馈环, 不强求全量注解. 后续按热点文件逐步收紧
+python_version = "3.12"
+files = ["g_agent"]
+exclude = ["tests/", "build/", "g_agent/browser_driver\\.py"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+disallow_untyped_defs = false
+follow_imports = "silent"
+
 [project.scripts]
 g-agent = "g_agent_cli.cli:main"

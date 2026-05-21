@@ -7,6 +7,7 @@ import json
 import re
 import random
 import locale
+from typing import Any
 
 os.environ.setdefault(
     "G_AGENT_LANG", "zh" if any(k in (locale.getlocale()[0] or "").lower() for k in ("zh", "chinese")) else "en"
@@ -47,7 +48,11 @@ from g_agent.feishu_events import (
 script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def load_tool_schema(suffix=""):
+# 模块级类型声明，避免 global 赋值后 mypy name-defined
+TOOLS_SCHEMA: list[dict[str, Any]] = []
+
+
+def load_tool_schema(suffix: str = "") -> None:
     global TOOLS_SCHEMA
     TS = open(os.path.join(script_dir, f"assets/tools_schema{suffix}.json"), "r", encoding="utf-8").read()
     TOOLS_SCHEMA = json.loads(TS if os.name == "nt" else TS.replace("powershell", "bash"))
@@ -87,10 +92,13 @@ class Agent:
     def __init__(self):
         os.makedirs(os.path.join(script_dir, "temp"), exist_ok=True)
         self.lock = threading.Lock()
-        self.task_dir = None
-        self.history = []
-        self.handler = None
-        self.task_queue = queue.Queue()
+        self.task_dir: str | None = None
+        self.history: list[Any] = []
+        self.handler: Any = None
+        # llmclient 在 load_llm_sessions 中赋值；预声明 Any 规避 has-type/attr-defined 连带错
+        self.llmclient: Any = None
+        self.llmclients: list[Any] = []
+        self.task_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.is_running = False
         self.stop_sig = False
         self.llm_no = 0
@@ -123,7 +131,7 @@ class Agent:
             oldhistory = self.llmclient.backend.history
         except Exception:
             oldhistory = None  # backend may not yet have a history attribute
-        llm_sessions = []
+        llm_sessions: list[Any] = []
         for k, cfg in mykeys.items():
             if not any(x in k for x in ["api", "config", "cookie"]):
                 continue
@@ -186,7 +194,7 @@ class Agent:
             self.handler.code_stop_signal.append(1)
 
     def put_task(self, query, source="user", images=None):
-        display_queue = queue.Queue()
+        display_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.task_queue.put({"query": query, "source": source, "images": images or [], "output": display_queue})
         return display_queue
 
@@ -265,7 +273,7 @@ class Agent:
                 full_resp = ""
                 last_pos = 0
                 last_progress_display = ""
-                completed_turns = set()
+                completed_turns: set[int] = set()
                 last_turn = None
                 for chunk in gen:
                     if consume_file(self.task_dir, "_stop"):
@@ -415,13 +423,14 @@ if __name__ == "__main__":
     if args.task:
         agent.peer_hint = False
         agent.task_dir = d = os.path.join(script_dir, f"temp/{args.task}")
-        nround = ""
+        nround: str | int = ""
         infile = os.path.join(d, "input.txt")
         if args.input:
             os.makedirs(d, exist_ok=True)
             import glob
 
-            [os.remove(f) for f in glob.glob(os.path.join(d, "output*.txt"))]
+            for _f in glob.glob(os.path.join(d, "output*.txt")):
+                os.remove(_f)
             with open(infile, "w", encoding="utf-8") as f:
                 f.write(args.input)
         if fh := consume_file(d, "_history.json"):
@@ -439,7 +448,7 @@ if __name__ == "__main__":
             consume_file(d, "_stop")  # 已经成功停下来了，避免打断下次reply
             for _ in range(300):  # 等reply.txt，10分钟超时
                 time.sleep(2)
-                if raw := consume_file(d, "reply.txt"):
+                if _reply := consume_file(d, "reply.txt"):
                     break
             else:
                 break
@@ -449,6 +458,7 @@ if __name__ == "__main__":
         import importlib.util
 
         spec = importlib.util.spec_from_file_location("reflect_script", args.reflect)
+        assert spec is not None and spec.loader is not None, f"无法加载 reflect 脚本: {args.reflect}"
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         if hasattr(mod, "init"):
@@ -458,6 +468,7 @@ if __name__ == "__main__":
         while True:
             if os.path.getmtime(args.reflect) != _mt:
                 try:
+                    assert spec.loader is not None
                     spec.loader.exec_module(mod)
                     _mt = os.path.getmtime(args.reflect)
                     if hasattr(mod, "init"):

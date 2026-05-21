@@ -48,10 +48,11 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
     print("code run output:")
     startupinfo = None
     if os.name == "nt":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        # Windows-only API; mypy on Linux 不识别此属性
+        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
         startupinfo.wShowWindow = 0  # SW_HIDE
-    full_stdout = []
+    full_stdout: list[str] = []
 
     def stream_reader(proc, logs):
         try:

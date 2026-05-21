@@ -6,6 +6,7 @@ web_scan / web_execute_js 始终读本模块的 driver，行为与原 tool_handl
 
 import importlib
 import time
+from typing import Any
 
 from g_agent import html_simplify
 
@@ -13,7 +14,8 @@ from .user_io import smart_format, format_error
 
 __all__ = ["driver", "first_init_driver", "web_scan", "web_execute_js"]
 
-driver = None
+# Any 类型规避 first_init_driver 后 mypy 看不到 None→Driver 收窄；driver 单例由 global 赋值
+driver: Any = None
 
 
 def first_init_driver():

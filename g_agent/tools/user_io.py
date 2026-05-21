@@ -9,6 +9,7 @@ import re
 import json
 import traceback
 from datetime import datetime
+from typing import Any
 
 # script_dir 语义同 tool_handler.py：项目根（assets/memory/temp 均在根下）
 script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,7 +24,7 @@ __all__ = [
 ]
 
 
-def extract_turn_brief(text):
+def extract_turn_brief(text: str | None) -> str:
     text = text or ""
     for tag in ("summary", "thinking"):
         m = re.search(rf"<{tag}>\s*(.*?)\s*</{tag}>", text, re.DOTALL | re.IGNORECASE)
@@ -34,7 +35,7 @@ def extract_turn_brief(text):
     return ""
 
 
-def ask_user(question, candidates=None, multi=False):
+def ask_user(question: str, candidates: list[str] | None = None, multi: bool = False) -> dict[str, Any]:
     """question: 向用户提出的问题。candidates: 可选的候选项列表。multi: 多选模式（前端据此渲染多选卡片）。"""
     return {
         "status": "INTERRUPT",
@@ -43,17 +44,19 @@ def ask_user(question, candidates=None, multi=False):
     }
 
 
-def format_error(e):
+def format_error(e: BaseException) -> str:
     exc_type, exc_value, exc_traceback = sys.exc_info()
+    # sys.exc_info() 在 except 块外返回 (None, None, None); 此时回退到 type(e)
+    type_name = exc_type.__name__ if exc_type is not None else type(e).__name__
     tb = traceback.extract_tb(exc_traceback)
     if tb:
         f = tb[-1]
         fname = os.path.basename(f.filename)
-        return f"{exc_type.__name__}: {str(e)} @ {fname}:{f.lineno}, {f.name} -> `{f.line}`"
-    return f"{exc_type.__name__}: {str(e)}"
+        return f"{type_name}: {str(e)} @ {fname}:{f.lineno}, {f.name} -> `{f.line}`"
+    return f"{type_name}: {str(e)}"
 
 
-def log_memory_access(path):
+def log_memory_access(path: str) -> None:
     if "memory" not in path:
         return
     stats_file = os.path.join(script_dir, "memory/file_access_stats.json")
@@ -68,7 +71,7 @@ def log_memory_access(path):
         json.dump(stats, f, indent=2, ensure_ascii=False)
 
 
-def smart_format(data, max_str_len=100, omit_str=" ... "):
+def smart_format(data: Any, max_str_len: int = 100, omit_str: str = " ... ") -> str:
     if not isinstance(data, str):
         data = str(data)
     if len(data) < max_str_len + len(omit_str) * 2:
@@ -76,9 +79,10 @@ def smart_format(data, max_str_len=100, omit_str=" ... "):
     return f"{data[:max_str_len//2]}{omit_str}{data[-max_str_len//2:]}"
 
 
-def consume_file(dr, file):
+def consume_file(dr: str | None, file: str) -> str | None:
     if dr and os.path.exists(os.path.join(dr, file)):
         with open(os.path.join(dr, file), encoding="utf-8", errors="replace") as f:
             content = f.read()
         os.remove(os.path.join(dr, file))
         return content
+    return None

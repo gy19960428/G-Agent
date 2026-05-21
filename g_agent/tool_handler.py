@@ -18,8 +18,8 @@ script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 # 工具实现已拆分到 g_agent.tools 子包，按需具名导入本模块内部用到的符号
-from g_agent.tools.user_io import smart_format, consume_file, log_memory_access
-from g_agent.tools.file_ops import expand_file_refs
+from g_agent.tools.user_io import smart_format, consume_file, log_memory_access, ask_user, extract_turn_brief
+from g_agent.tools.file_ops import expand_file_refs, file_patch, file_read
 from g_agent.tools.code_exec import code_run
 from g_agent.tools.web_ops import web_scan, web_execute_js
 
@@ -309,6 +309,7 @@ class ToolHandler(BaseHandler):
         blocks = re.findall(code_block_pattern, content)
         if len(blocks) == 1:
             m = re.search(code_block_pattern, content)
+            assert m is not None  # findall 已确认存在 1 个匹配
             after_block = content[m.end() :]
             if not after_block.strip():
                 residual = content.replace(m.group(0), "")

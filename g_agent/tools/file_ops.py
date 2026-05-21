@@ -8,6 +8,8 @@ import re
 import itertools
 import collections
 import difflib
+from collections import deque
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 __all__ = [
@@ -20,7 +22,7 @@ __all__ = [
 EXPAND_FILE_REFS_MAX_BYTES = 2 * 1024 * 1024  # 单次引用文件大小上限 2MB，防误展开巨型文件
 
 
-def expand_file_refs(text, base_dir=None):
+def expand_file_refs(text: str, base_dir: str | None = None) -> str:
     """展开文本中的 {{file:路径:起始行:结束行}} 引用为实际文件内容。
     可与普通文本混排。展开失败抛 ValueError。
     base_dir: 相对路径的基准目录，默认为进程 cwd。
@@ -28,7 +30,7 @@ def expand_file_refs(text, base_dir=None):
     pattern = r"\{\{file:(.+?):(\d+):(\d+)\}\}"
     base_real = os.path.realpath(base_dir or os.getcwd())
 
-    def replacer(match):
+    def replacer(match: re.Match[str]) -> str:
         raw_path, start, end = match.group(1), int(match.group(2)), int(match.group(3))
         joined = os.path.join(base_dir or ".", raw_path)
         target_real = os.path.realpath(joined)
@@ -48,7 +50,7 @@ def expand_file_refs(text, base_dir=None):
     return re.sub(pattern, replacer, text)
 
 
-def file_patch(path: str, old_content: str, new_content: str):
+def file_patch(path: str, old_content: str, new_content: str) -> dict[str, str]:
     """在文件中寻找唯一的 old_content 块并替换为 new_content"""
     path = str(Path(path).resolve())
     try:
@@ -77,10 +79,10 @@ def file_patch(path: str, old_content: str, new_content: str):
         return {"status": "error", "msg": str(e)}
 
 
-_read_dirs = set()
+_read_dirs: set[str] = set()
 
 
-def _scan_files(base, depth=2):
+def _scan_files(base: str, depth: int = 2) -> Iterator[tuple[str, str]]:
     try:
         for e in os.scandir(base):
             if e.is_file():
@@ -91,13 +93,19 @@ def _scan_files(base, depth=2):
         pass
 
 
-def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
+def file_read(
+    path: str,
+    start: int = 1,
+    keyword: str | None = None,
+    count: int = 200,
+    show_linenos: bool = True,
+) -> str:
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            stream = ((i, l.rstrip("\r\n")) for i, l in enumerate(f, 1))
+            stream: Iterable[tuple[int, str]] = ((i, l.rstrip("\r\n")) for i, l in enumerate(f, 1))
             stream = itertools.dropwhile(lambda x: x[0] < start, stream)
             if keyword:
-                before = collections.deque(maxlen=count // 3)
+                before: deque[tuple[int, str]] = collections.deque(maxlen=count // 3)
                 for i, l in stream:
                     if keyword.lower() in l.lower():
                         res = list(before) + [(i, l)] + list(itertools.islice(stream, count - len(before) - 1))
