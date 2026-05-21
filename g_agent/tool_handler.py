@@ -10,275 +10,31 @@ from g_agent.loop import BaseHandler, StepOutcome, json_default
 # script_dir 语义为项目根（assets/memory/temp 均在根下），g_agent 是子包
 script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def extract_turn_brief(text):
-    text = text or ''
-    for tag in ('summary', 'thinking'):
-        m = re.search(rf'<{tag}>\s*(.*?)\s*</{tag}>', text, re.DOTALL | re.IGNORECASE)
-        if not m:
-            continue
-        lines = [ln.strip() for ln in m.group(1).splitlines() if ln.strip()]
-        return lines[0] if lines else m.group(1).strip()
-    return ''
 
-def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000):
-    """代码执行器
-    python: 运行复杂的 .py 脚本（文件模式）
-    powershell/bash: 运行单行指令（命令模式）
-    优先使用python，仅在必要系统操作时使用powershell"""
-    preview = (code[:60].replace('\n', ' ') + '...') if len(code) > 60 else code.strip()
-    yield f"[Action] Running {code_type} in {os.path.basename(cwd)}: {preview}\n"
-    cwd = cwd or os.path.join(script_dir, 'temp'); tmp_path = None
-    if code_type in ["python", "py"]:
-        tmp_file = tempfile.NamedTemporaryFile(suffix=".ai.py", delete=False, mode='w', encoding='utf-8', dir=code_cwd)
-        cr_header = os.path.join(script_dir, 'assets', 'code_run_header.py')
-        if os.path.exists(cr_header): tmp_file.write(open(cr_header, encoding='utf-8').read())
-        tmp_file.write(code)
-        tmp_path = tmp_file.name
-        tmp_file.close()
-        cmd = [sys.executable, "-X", "utf8", "-u", tmp_path]   
-    elif code_type in ["powershell", "bash", "sh", "shell", "ps1", "pwsh"]:
-        if os.name == 'nt': cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", code]
-        else: cmd = ["bash", "-c", code]
-    else:
-        return {"status": "error", "msg": f"不支持的类型: {code_type}"}
-    print("code run output:") 
-    startupinfo = None
-    if os.name == 'nt':
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = 0 # SW_HIDE
-    full_stdout = []
+# 工具实现已拆分到 g_agent.tools 子包，这里 re-export 保持外部 import 路径兼容
+from g_agent.tools.user_io import *  # noqa: F401,F403
+from g_agent.tools.file_ops import *  # noqa: F401,F403
+from g_agent.tools.code_exec import *  # noqa: F401,F403
+from g_agent.tools.web_ops import *  # noqa: F401,F403
+# 兼容直接属性访问（旧代码可能 from g_agent.tool_handler import driver 等）
+from g_agent.tools import web_ops as _web_ops  # noqa: F401
+from g_agent.tools import file_ops as _file_ops  # noqa: F401
 
-    def stream_reader(proc, logs):
-        try:
-            for line_bytes in iter(proc.stdout.readline, b''):
-                try: line = line_bytes.decode('utf-8')
-                except UnicodeDecodeError: line = line_bytes.decode('gbk', errors='ignore')
-                logs.append(line)
-                try: print(line, end="") 
-                except: pass
-        except: pass
+# 单测可能 monkeypatch.setattr(tool_handler, "EXPAND_FILE_REFS_MAX_BYTES", N)，
+# 拆分后 expand_file_refs 走 file_ops 模块全局，需要把对本模块的属性写入同步过去。
+import sys as _sys
+import types as _types
+class _ToolHandlerModule(_types.ModuleType):
+    _SYNC_TO_FILE_OPS = {"EXPAND_FILE_REFS_MAX_BYTES"}
+    _SYNC_TO_WEB_OPS = {"driver"}
+    def __setattr__(self, key, value):
+        super().__setattr__(key, value)
+        if key in self._SYNC_TO_FILE_OPS:
+            setattr(_file_ops, key, value)
+        if key in self._SYNC_TO_WEB_OPS:
+            setattr(_web_ops, key, value)
+_sys.modules[__name__].__class__ = _ToolHandlerModule
 
-    try:
-        process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            bufsize=0, cwd=cwd, startupinfo=startupinfo,
-            creationflags=0x08000000 if os.name == 'nt' else 0
-        )
-        start_t = time.time()
-        t = threading.Thread(target=stream_reader, args=(process, full_stdout), daemon=True)
-        t.start()
-
-        while t.is_alive():
-            istimeout = time.time() - start_t > timeout
-            if istimeout or stop_signal:
-                process.kill()
-                print("[Debug] Process killed due to timeout or stop signal.")
-                if istimeout: full_stdout.append("\n[Timeout Error] 超时强制终止")
-                else: full_stdout.append("\n[Stopped] 用户强制终止")
-                break
-            time.sleep(1)
-
-        t.join(timeout=1)
-        exit_code = process.poll()
-
-        stdout_str = "".join(full_stdout)
-        status = "success" if exit_code == 0 else "error"
-        status_icon = "✅" if exit_code == 0 else "❌"
-        if exit_code is None: status_icon = "⏳" 
-        output_snippet = smart_format(stdout_str, max_str_len=600, omit_str='\n\n[omitted long output]\n\n')
-        output_snippet = re.sub(r'`{4,}', lambda m: m.group(0)[:3] + '\u200b' + m.group(0)[3:], output_snippet)
-        yield f"[Status] {status_icon} Exit Code: {exit_code}\n[Stdout]\n{output_snippet}\n"
-        if process.stdout: threading.Thread(target=process.stdout.close, daemon=True).start()
-        return {
-            "status": status,
-            "stdout": smart_format(stdout_str, max_str_len=maxlen, omit_str='\n\n[omitted long output]\n\n'),
-            "exit_code": exit_code
-        }
-    except Exception as e:
-        if 'process' in locals(): process.kill()
-        return {"status": "error", "msg": str(e)}
-    finally:
-        if code_type == "python" and tmp_path and os.path.exists(tmp_path): os.remove(tmp_path)
-
-
-def ask_user(question, candidates=None, multi=False):
-    """question: 向用户提出的问题。candidates: 可选的候选项列表。multi: 多选模式（前端据此渲染多选卡片）。"""
-    return {"status": "INTERRUPT", "intent": "HUMAN_INTERVENTION",
-        "data": {"question": question, "candidates": candidates or [], "multi": bool(multi)}}
-
-from g_agent import html_simplify
-driver = None
-def first_init_driver():
-    global driver
-    from BrowserDriver import BrowserDriver
-    driver = BrowserDriver()
-    for i in range(20):
-        time.sleep(1)
-        sess = driver.get_all_sessions()
-        if len(sess) > 0: break
-    if len(sess) == 0: return 
-    if len(sess) == 1: 
-        #driver.newtab()
-        time.sleep(3)
-
-def web_scan(tabs_only=False, switch_tab_id=None, text_only=False, maxlen=35000):
-    """获取当前页面的简化HTML内容和标签页列表。注意：简化过程会过滤边栏、浮动元素等非主体内容。
-    tabs_only: 仅返回标签页列表，不获取HTML内容（节省token）。
-    switch_tab_id: 可选参数，如果提供，则在扫描前切换到该标签页。
-    应当多用execute_js，少全量观察html"""
-    global driver
-    try:
-        if driver is None: first_init_driver()
-        if len(driver.get_all_sessions()) == 0:
-            return {"status": "error", "msg": "没有可用的浏览器标签页，查L3记忆分析原因。"}
-        tabs = []
-        for sess in driver.get_all_sessions(): 
-            sess.pop('connected_at', None)
-            sess.pop('type', None)
-            sess['url'] = sess.get('url', '')[:50] + ("..." if len(sess.get('url', '')) > 50 else "")
-            tabs.append(sess)
-        if switch_tab_id: driver.default_session_id = switch_tab_id
-        result = {
-            "status": "success",
-            "metadata": {
-                "tabs_count": len(tabs), "tabs": tabs,
-                "active_tab": driver.default_session_id
-            }
-        }
-        if not tabs_only: 
-            importlib.reload(html_simplify); result["content"] = html_simplify.get_html(driver, cutlist=True, maxchars=maxlen, text_only=text_only)
-            if text_only: result['content'] = smart_format(result['content'], max_str_len=maxlen//3, omit_str='\n\n[omitted long content]\n\n')
-        return result
-    except Exception as e:
-        return {"status": "error", "msg": format_error(e)}
-    
-def format_error(e):
-    exc_type, exc_value, exc_traceback = sys.exc_info()
-    tb = traceback.extract_tb(exc_traceback)
-    if tb:
-        f = tb[-1]
-        fname = os.path.basename(f.filename)
-        return f"{exc_type.__name__}: {str(e)} @ {fname}:{f.lineno}, {f.name} -> `{f.line}`"
-    return f"{exc_type.__name__}: {str(e)}"
-
-def log_memory_access(path):
-    if 'memory' not in path: return
-    stats_file = os.path.join(script_dir, 'memory/file_access_stats.json')
-    try:
-        with open(stats_file, 'r', encoding='utf-8') as f: stats = json.load(f)
-    except: stats = {}
-    fname = os.path.basename(path)
-    stats[fname] = {'count': stats.get(fname, {}).get('count', 0) + 1, 'last': datetime.now().strftime('%Y-%m-%d')}
-    with open(stats_file, 'w', encoding='utf-8') as f: json.dump(stats, f, indent=2, ensure_ascii=False)
-
-def web_execute_js(script, switch_tab_id=None, no_monitor=False):
-    """执行 JS 脚本来控制浏览器，并捕获结果和页面变化"""
-    global driver
-    try:
-        if driver is None: first_init_driver()
-        if len(driver.get_all_sessions()) == 0: return {"status": "error", "msg": "没有可用的浏览器标签页，查L3记忆分析原因。"}
-        if switch_tab_id: driver.default_session_id = switch_tab_id
-        result = html_simplify.execute_js_rich(script, driver, no_monitor=no_monitor)
-        return result
-    except Exception as e: return {"status": "error", "msg": format_error(e)}
-
-EXPAND_FILE_REFS_MAX_BYTES = 2 * 1024 * 1024  # 单次引用文件大小上限 2MB，防误展开巨型文件
-
-def expand_file_refs(text, base_dir=None):
-    """展开文本中的 {{file:路径:起始行:结束行}} 引用为实际文件内容。
-    可与普通文本混排。展开失败抛 ValueError。
-    base_dir: 相对路径的基准目录，默认为进程 cwd。
-    沙箱：解析后的 realpath 必须位于 realpath(base_dir or cwd) 内，且文件 <= 2MB。"""
-    pattern = r'\{\{file:(.+?):(\d+):(\d+)\}\}'
-    base_real = os.path.realpath(base_dir or os.getcwd())
-    def replacer(match):
-        raw_path, start, end = match.group(1), int(match.group(2)), int(match.group(3))
-        joined = os.path.join(base_dir or '.', raw_path)
-        target_real = os.path.realpath(joined)
-        if target_real != base_real and not target_real.startswith(base_real + os.sep):
-            raise ValueError(f"引用文件超出沙箱: {target_real} (base={base_real})")
-        if not os.path.isfile(target_real): raise ValueError(f"引用文件不存在: {target_real}")
-        size = os.path.getsize(target_real)
-        if size > EXPAND_FILE_REFS_MAX_BYTES:
-            raise ValueError(f"引用文件超过 {EXPAND_FILE_REFS_MAX_BYTES} 字节上限: {target_real} ({size} bytes)")
-        with open(target_real, 'r', encoding='utf-8') as f: lines = f.readlines()
-        if start < 1 or end > len(lines) or start > end: raise ValueError(f"行号越界: {target_real} 共{len(lines)}行, 请求{start}-{end}")
-        return ''.join(lines[start-1:end])
-    return re.sub(pattern, replacer, text)
-    
-def file_patch(path: str, old_content: str, new_content: str):
-    """在文件中寻找唯一的 old_content 块并替换为 new_content"""
-    path = str(Path(path).resolve())
-    try:
-        if not os.path.exists(path): return {"status": "error", "msg": "文件不存在"}
-        with open(path, 'r', encoding='utf-8') as f: full_text = f.read()
-        if not old_content: return {"status": "error", "msg": "old_content 为空，请确认 arguments"}
-        count = full_text.count(old_content)
-        if count == 0: return {"status": "error", "msg": "未找到匹配的旧文本块，建议：先用 file_read 确认当前内容，再分小段进行 patch。若多次失败则询问用户，严禁自行使用 overwrite 或代码替换。"}
-        if count > 1: return {"status": "error", "msg": f"找到 {count} 处匹配，无法确定唯一位置。请提供更长、更具体的旧文本块以确保唯一性。建议：包含上下文行来增强特征，或分小段逐个修改。"}
-        updated_text = full_text.replace(old_content, new_content)
-        with open(path, 'w', encoding='utf-8') as f: f.write(updated_text)
-        return {"status": "success", "msg": "文件局部修改成功"}
-    except Exception as e: return {"status": "error", "msg": str(e)}
-
-_read_dirs = set()
-def _scan_files(base, depth=2):
-    try:
-        for e in os.scandir(base):
-            if e.is_file(): yield (e.name, e.path)
-            elif depth > 0 and e.is_dir(follow_symlinks=False): yield from _scan_files(e.path, depth - 1)
-    except (PermissionError, OSError): pass
-def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
-    try:
-        with open(path, 'r', encoding='utf-8', errors='replace') as f:
-            stream = ((i, l.rstrip('\r\n')) for i, l in enumerate(f, 1))
-            stream = itertools.dropwhile(lambda x: x[0] < start, stream)
-            if keyword:
-                before = collections.deque(maxlen=count//3)
-                for i, l in stream:
-                    if keyword.lower() in l.lower():
-                        res = list(before) + [(i, l)] + list(itertools.islice(stream, count - len(before) - 1))
-                        break
-                    before.append((i, l))
-                else: return f"Keyword '{keyword}' not found after line {start}. Falling back to content from line {start}:\n\n" \
-                               + file_read(path, start, None, count, show_linenos)
-            else: res = list(itertools.islice(stream, count))
-            realcnt = len(res); L_MAX = min(max(100, 256000//max(realcnt,1)), 8000); TAG = " ... [TRUNCATED]"
-            remaining = sum(1 for _ in itertools.islice(stream, 5000))
-            total_lines = (res[0][0] - 1 if res else start - 1) + realcnt + remaining
-            tl_str = f"{total_lines}+" if remaining >= 5000 else str(total_lines)
-            partial = total_lines > realcnt
-            total_tag = f"[FILE] {tl_str} lines" + (f" | PARTIAL showing {realcnt}; assess need for more" if partial else "") + "\n"
-            res = [(i, l if len(l) <= L_MAX else l[:L_MAX] + TAG) for i, l in res]
-            result = "\n".join(f"{i}|{l}" if show_linenos else l for i, l in res)
-            if show_linenos: result = total_tag + result
-            elif partial: result += f"\n\n[FILE PARTIAL: showing {realcnt}/{tl_str} lines; assess need for more]"
-            _read_dirs.add(os.path.dirname(os.path.abspath(path)))
-            return result
-    except FileNotFoundError:
-        msg = f"Error: File not found: {path}"
-        try:
-            tgt = os.path.basename(path); scan = os.path.dirname(os.path.dirname(os.path.abspath(path)))
-            roots = [scan] + [d for d in _read_dirs if not d.startswith(scan)]
-            cands = list(itertools.islice((c for base in roots for c in _scan_files(base)), 2000))
-            top = sorted([(difflib.SequenceMatcher(None, tgt.lower(), c[0].lower()).ratio(), c) for c in cands[:2000]], key=lambda x: -x[0])[:5]
-            top = [(s, c) for s, c in top if s > 0.3]
-            if top: msg += "\n\nDid you mean:\n" + "\n".join(f"  {c[1]}  ({s:.0%})" for s, c in top)
-        except Exception: pass
-        return msg
-    except Exception as e: return f"Error: {str(e)}"
-
-def smart_format(data, max_str_len=100, omit_str=' ... '):
-    if not isinstance(data, str): data = str(data)
-    if len(data) < max_str_len + len(omit_str)*2: return data
-    return f"{data[:max_str_len//2]}{omit_str}{data[-max_str_len//2:]}"
-
-def consume_file(dr, file):
-    if dr and os.path.exists(os.path.join(dr, file)): 
-        with open(os.path.join(dr, file), encoding='utf-8', errors='replace') as f: content = f.read()
-        os.remove(os.path.join(dr, file))
-        return content
 
 class ToolHandler(BaseHandler):
     '''G-Agent 工具库，包含多种工具的实现。工具函数自动加上了 do_ 前缀。实际工具名没有前缀。'''
