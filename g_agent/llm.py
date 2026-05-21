@@ -116,6 +116,31 @@ def _parse_claude_json(data):
         elif b.get("type") == "thinking": yield ""
     return content_blocks
 
+_CLAUDE_SSE_KNOWN_EVENTS = frozenset({
+    "message_start", "content_block_start", "content_block_delta",
+    "content_block_stop", "message_delta", "message_stop", "error",
+    "ping",  # silent keep-alive, intentionally ignored
+})
+_OAI_RESP_SSE_KNOWN_EVENTS = frozenset({
+    "response.output_text.delta", "response.output_text.done",
+    "response.output_item.added", "response.function_call_arguments.delta",
+    "response.function_call_arguments.done", "response.completed", "error",
+    "response.created", "response.in_progress",  # noisy lifecycle, intentionally ignored
+    "response.output_item.done", "response.content_part.added",
+    "response.content_part.done", "response.reasoning_summary_part.added",
+    "response.reasoning_summary_part.done", "response.reasoning_summary_text.delta",
+    "response.reasoning_summary_text.done", "response.reasoning_text.delta",
+    "response.reasoning_text.done", "response.function_call.added",
+})
+_SEEN_UNKNOWN_SSE_EVENTS = set()  # de-dup unknown evt warnings within process lifetime
+def _warn_unknown_sse_event(scope, evt_type):
+    """Print a one-shot warning per (scope,evt_type) so a new event surfaces once
+    but does not flood logs. Crucial for catching upstream API additions."""
+    key = (scope, evt_type)
+    if key in _SEEN_UNKNOWN_SSE_EVENTS: return
+    _SEEN_UNKNOWN_SSE_EVENTS.add(key)
+    print(f"[SSE-WARN] unknown {scope} event: {evt_type!r} (first occurrence; suppressed afterwards)")
+
 def _parse_claude_sse(resp_lines):
     """Parse Anthropic SSE stream. Yields text chunks, returns list[content_block]."""
     content_blocks = []; current_block = None; tool_json_buf = ""
@@ -128,7 +153,7 @@ def _parse_claude_sse(resp_lines):
         if data_str == "[DONE]": break
         try: evt = json.loads(data_str)
         except Exception as e:
-            print(f"[SSE] JSON parse error: {e}, line: {data_str[:200]}")
+            print(f"[SSE-WARN] claude json parse error: {e}, line: {data_str[:200]}")
             continue
         evt_type = evt.get("type", "")
         if evt_type == "message_start":
@@ -171,6 +196,10 @@ def _parse_claude_sse(resp_lines):
             err = evt.get("error", {})
             emsg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
             warn = f"\n\n!!!Error: SSE {emsg}"; break
+        elif evt_type == "ping":
+            pass  # keep-alive
+        else:
+            _warn_unknown_sse_event("claude", evt_type)
     if not warn:
         if not got_message_stop and not stop_reason: warn = "\n\n[!!! 流异常中断，未收到完整响应 !!!]"
         elif stop_reason == "max_tokens": warn = "\n\n[!!! Response truncated: max_tokens !!!]"
@@ -216,7 +245,9 @@ def _parse_openai_sse(resp_lines, api_mode="chat_completions"):
             data_str = line[5:].lstrip()
             if data_str == "[DONE]": break
             try: evt = json.loads(data_str)
-            except: continue
+            except Exception as e:
+                print(f"[SSE-WARN] oai-responses json parse error: {e}, line: {data_str[:200]}")
+                continue
             etype = evt.get("type", "")
             if etype == "response.output_text.delta":
                 delta = evt.get("delta", "")
@@ -245,6 +276,10 @@ def _parse_openai_sse(resp_lines, api_mode="chat_completions"):
                 usage = evt.get("response", {}).get("usage", {})
                 _record_usage(usage, api_mode)
                 break
+            elif etype in _OAI_RESP_SSE_KNOWN_EVENTS:
+                pass  # known but intentionally ignored (lifecycle / part frames)
+            else:
+                _warn_unknown_sse_event("oai-responses", etype)
         blocks = []
         if content_text: blocks.append({"type": "text", "text": content_text})
         for idx in sorted(fc_buf):
@@ -265,7 +300,9 @@ def _parse_openai_sse(resp_lines, api_mode="chat_completions"):
             data_str = line[5:].lstrip()
             if data_str == "[DONE]": break
             try: evt = json.loads(data_str)
-            except: continue
+            except Exception as e:
+                print(f"[SSE-WARN] oai-chat json parse error: {e}, line: {data_str[:200]}")
+                continue
             ch = (evt.get("choices") or [{}])[0]
             delta = ch.get("delta") or {}
             if delta.get("reasoning_content"):
