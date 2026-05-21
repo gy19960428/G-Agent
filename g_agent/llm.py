@@ -1373,8 +1373,8 @@ Follow these steps to think and act:
                 except json.JSONDecodeError:
                     errors.append(f"Failed to parse tool_use JSON: {json_str[:200]}")
                     self.last_tools = ""
-                except:
-                    pass
+                except Exception as e:
+                    print(f"[parse-tool-use] {e!r}")
             if not tool_calls:
                 for e in errors:
                     print(f"[Warn] {e}")

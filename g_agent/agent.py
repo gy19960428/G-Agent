@@ -121,8 +121,8 @@ class Agent:
             return
         try:
             oldhistory = self.llmclient.backend.history
-        except:
-            oldhistory = None
+        except Exception:
+            oldhistory = None  # backend may not yet have a history attribute
         llm_sessions = []
         for k, cfg in mykeys.items():
             if not any(x in k for x in ["api", "config", "cookie"]):

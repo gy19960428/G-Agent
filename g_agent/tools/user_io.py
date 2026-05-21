@@ -60,7 +60,7 @@ def log_memory_access(path):
     try:
         with open(stats_file, "r", encoding="utf-8") as f:
             stats = json.load(f)
-    except:
+    except (FileNotFoundError, json.JSONDecodeError):
         stats = {}
     fname = os.path.basename(path)
     stats[fname] = {"count": stats.get(fname, {}).get("count", 0) + 1, "last": datetime.now().strftime("%Y-%m-%d")}
