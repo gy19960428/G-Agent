@@ -125,7 +125,8 @@ class Agent:
 
     def load_llm_sessions(self):
         mykeys, changed = reload_mykeys()
-        if not changed and hasattr(self, "llmclients"):
+        # 哨兵判已加载: __init__ 已预声明 self.llmclients=[]，不能再用 hasattr
+        if not changed and self.llmclients:
             return
         try:
             oldhistory = self.llmclient.backend.history
