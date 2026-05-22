@@ -458,4 +458,13 @@ def get_global_memory():
         prompt += insight + "\n"
     except FileNotFoundError:
         pass
+    # Pinned: always inject L2 [User] section so identity/称呼/自称/风格偏好首轮即生效
+    try:
+        with open(os.path.join(script_dir, "memory/global_mem.txt"), "r", encoding="utf-8", errors="replace") as f:
+            l2 = f.read()
+        m = re.search(r"^##\s*\[User\][^\n]*\n.*?(?=^##\s*\[|\Z)", l2, re.M | re.S)
+        if m:
+            prompt += "\n../memory/global_mem.txt (pinned [User]):\n" + m.group(0).rstrip() + "\n"
+    except FileNotFoundError:
+        pass
     return prompt
