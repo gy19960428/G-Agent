@@ -20,7 +20,7 @@ driver: Any = None
 
 def first_init_driver():
     global driver
-    from BrowserDriver import BrowserDriver
+    from g_agent.browser_driver import BrowserDriver
 
     driver = BrowserDriver()
     for i in range(20):
