@@ -874,7 +874,7 @@ async def _reply_command_text(message, text):
             await message.reply_text(segment)
 
 
-_DENY_ADMIN_URL = "your admin contact"
+_DENY_ADMIN_URL = os.getenv("TG_DENY_ADMIN_URL", "your admin contact")
 
 
 def _deny_text(uid):
