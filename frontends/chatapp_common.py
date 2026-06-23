@@ -367,7 +367,10 @@ class AgentChatMixin:
             if state:
                 state["running"] = False
             self.agent.abort()
-            return await self.send_text(chat_id, "⏹️ 正在停止...", **ctx)
+            # ask_user 暂停时 run_agent 主循环已退出但占位被故意保留, /stop 必须主动清掉
+            # 否则后续消息会一直被 "已有任务在运行" 拦截, 只能重启进程
+            self.user_tasks.pop(chat_id, None)
+            return await self.send_text(chat_id, "⏹️ 已停止，可继续发消息", **ctx)
         if op == "/status":
             llm = self.agent.get_llm_name() if self.agent.llmclient else "未配置"
             return await self.send_text(

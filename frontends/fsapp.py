@@ -76,6 +76,18 @@ _fs_ask_menu_store: dict = {}
 _fs_ask_menu_lock = threading.Lock()
 
 
+def _clear_chat_task(chat_key):
+    """ask_user 过期/异常路径主动清 user_tasks 占位, 防 run_agent 再次拒绝新消息."""
+    if not chat_key:
+        return
+    try:
+        app = get_app()
+        if app is not None:
+            app.user_tasks.pop(chat_key, None)
+    except Exception as exc:
+        print(f"[FS-ASK] _clear_chat_task err: {exc}", flush=True)
+
+
 _TRUNC_TAIL = 300  # 截断兜底时保留原文尾部字符数
 _DEDUP_TTL_SEC = 10 * 60
 _DEDUP_MAX = 2000
@@ -641,12 +653,13 @@ def _send_ask_user_card(receive_id, receive_id_type, ev):
     )
     card_json = _ask_user_card_raw(ev, multi=multi, selected_set=set())
     msg_id = _send_raw(receive_id, card_json, "interactive", receive_id_type)
-    if msg_id and multi:
+    # 不论 multi 都写一份, 单选过期分支也能反查 chat_key 清 user_tasks 占位防死锁
+    if msg_id:
         with _fs_ask_menu_lock:
             _fs_ask_menu_store[ev.menu_id] = {
                 "ev": ev,
-                "multi": True,
-                "selected": set(),
+                "multi": bool(multi),
+                "selected": set() if multi else None,
                 "msg_id": msg_id,
                 "receive_id": receive_id,
                 "rid_type": receive_id_type,
@@ -1220,6 +1233,20 @@ def handle_message(data):
             daemon=True,
         ).start()
         return
+    # ask_user 文本兜底: 若该 chat 还挂着未消费的卡片选项, 把这条文本当作回答续传,
+    # 避免被 user_tasks 占位拦截后只能 /stop. 仅对纯文本生效.
+    if message.message_type == "text" and user_input.strip():
+        ev_pending = _ASK_BUS.drain_latest(chat_key)
+        if ev_pending is not None:
+            with _fs_ask_menu_lock:
+                _fs_ask_menu_store.pop(ev_pending.menu_id, None)
+            print(
+                f"[FS-ASK] text-resume menu_id={ev_pending.menu_id} owner={ev_pending.owner_id} "
+                f"answer={user_input[:80]!r}",
+                flush=True,
+            )
+            _resume_after_ask(chat_key, user_input)
+            return
     threading.Thread(
         target=_run_async,
         args=(
@@ -1360,7 +1387,11 @@ def handle_card_action(data):
                     return _card_action_response("还没选择任何项", toast_type="warning")
                 ev_popped = _ASK_BUS.pop_by_menu_id(menu_id)
                 if ev_popped is None:
-                    return _card_action_response("这个选择已处理或已过期", toast_type="warning")
+                    # 过期路径: 主动清 user_tasks 占位防死锁
+                    _clear_chat_task(entry.get("receive_id"))
+                    with _fs_ask_menu_lock:
+                        _fs_ask_menu_store.pop(menu_id, None)
+                    return _card_action_response("会话已超时，已重置；请直接重发消息", toast_type="warning")
                 with _fs_ask_menu_lock:
                     _fs_ask_menu_store.pop(menu_id, None)
                 ordered = sorted(snapshot)
@@ -1390,14 +1421,25 @@ def handle_card_action(data):
             return _card_action_response("未知操作", toast_type="warning")
 
         # ----- 单选/空候选 -----
+        with _fs_ask_menu_lock:
+            single_entry = _fs_ask_menu_store.get(menu_id)
         ev = _ASK_BUS.get_by_menu_id(menu_id)
         if ev is None:
-            return _card_action_response("这个选择已处理或已过期", toast_type="warning")
+            _clear_chat_task(single_entry.get("receive_id") if single_entry else None)
+            with _fs_ask_menu_lock:
+                _fs_ask_menu_store.pop(menu_id, None)
+            return _card_action_response("会话已超时，已重置；请直接重发消息", toast_type="warning")
         if ev.owner_id and open_id and ev.owner_id.startswith("ou_") and ev.owner_id != str(open_id):
             return _card_action_response("这不是你的选择菜单", toast_type="warning")
         ev = _ASK_BUS.pop_by_menu_id(menu_id)
         if ev is None:
-            return _card_action_response("这个选择已处理或已过期", toast_type="warning")
+            _clear_chat_task(single_entry.get("receive_id") if single_entry else None)
+            with _fs_ask_menu_lock:
+                _fs_ask_menu_store.pop(menu_id, None)
+            return _card_action_response("会话已超时，已重置；请直接重发消息", toast_type="warning")
+        # 单选成功路径: 清掉 store 占位项
+        with _fs_ask_menu_lock:
+            _fs_ask_menu_store.pop(menu_id, None)
         if act == _FS_ACTION_CANCEL:
             print(f"[FS-ASK] cancel(single) menu_id={menu_id}", flush=True)
             _resume_after_ask(ev.owner_id, _ASK_CANCEL_PROMPT)

@@ -43,7 +43,19 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = []
-packages = ["g_agent_cli"]
+packages = [
+    "g_agent_cli",
+    "g_agent_ng",
+    "g_agent_ng.app",
+    "g_agent_ng.runtime",
+    "g_agent_ng.llm",
+    "g_agent_ng.tools",
+    "g_agent_ng.tools.builtin",
+    "g_agent_ng.browser",
+    "g_agent_ng.ui",
+    "g_agent_ng.persistence",
+    "g_agent_ng.observability",
+]
 
 [tool.mypy]
 # 渐进式: 先建立反馈环, 不强求全量注解. 后续按热点文件逐步收紧
@@ -60,3 +72,4 @@ follow_imports = "silent"
 
 [project.scripts]
 g-agent = "g_agent_cli.cli:main"
+g-agent-ng = "g_agent_ng.app.cli:main"
