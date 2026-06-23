@@ -39,6 +39,7 @@ from continue_cmd import handle_frontend_command, reset_conversation
 from btw_cmd import handle_frontend_command as handle_btw_frontend_command
 from g_agent.llm import mykeys
 from _ask_user_common import AskUserEventBus, register_hook, start_gc_timer
+from frontends.voice_input import build_voice_prompt
 
 agent = Agent()
 agent.verbose = False
@@ -1119,6 +1120,30 @@ async def handle_photo(update, ctx):
     ctx.user_data["stream_task"] = task
 
 
+async def handle_voice(update, ctx):
+    uid = update.effective_user.id
+    if ALLOWED and uid not in ALLOWED:
+        _log_deny(update, "voice")
+        return await update.message.reply_text(_deny_text(uid))
+    media = update.message.voice or update.message.audio
+    if not media:
+        return
+    file = await media.get_file()
+    ext = os.path.splitext(getattr(media, "file_name", "") or "")[1]
+    if not ext:
+        ext = ".ogg" if update.message.voice else ".mp3"
+    fpath = f"tg_voice_{media.file_unique_id}{ext}"
+    local_path = os.path.join(_TEMP_DIR, fpath)
+    await file.download_to_drive(local_path)
+    prompt = build_voice_prompt(local_path, mykeys, source="telegram")
+    caption = update.message.caption
+    if caption:
+        prompt = f"{prompt}\n\n[caption]\n{caption}"
+    dq = agent.put_task(prompt, source="telegram")
+    task = asyncio.create_task(_stream(dq, update.message))
+    ctx.user_data["stream_task"] = task
+
+
 async def handle_command(update, ctx):
     uid = update.effective_user.id
     if ALLOWED and uid not in ALLOWED:
@@ -1206,6 +1231,7 @@ if __name__ == "__main__":
             app.add_handler(MessageHandler(filters.COMMAND, handle_command))
             app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
             app.add_handler(MessageHandler(filters.Document.ALL, handle_photo))
+            app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
             app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_msg))
             app.add_error_handler(_error_handler)
             app.run_polling(drop_pending_updates=True, poll_interval=1.0, timeout=30)

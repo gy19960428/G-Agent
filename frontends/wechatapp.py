@@ -21,6 +21,8 @@ from Crypto.Cipher import AES
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _TEMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "temp")
 from g_agent.agent import Agent
+from g_agent.llm import mykeys
+from frontends.voice_input import build_voice_prompt, is_audio_path
 
 
 # ── AuthExpired (errcode -14 from getUpdates) ──
@@ -450,7 +452,13 @@ def on_message(bot, msg):
     if not text and not media_paths:
         return
     if media_paths:
-        text = (text + "\n" if text else "") + "\n".join(f"[用户发送文件: {p}]" for p in media_paths)
+        media_notes = []
+        for p in media_paths:
+            if is_audio_path(p):
+                media_notes.append(build_voice_prompt(p, mykeys, source="wechat"))
+            else:
+                media_notes.append(f"[用户发送文件: {p}]")
+        text = (text + "\n" if text else "") + "\n".join(media_notes)
     print(f"[WX] 收到: {text[:80]}", file=sys.__stdout__)
 
     # Commands

@@ -26,6 +26,7 @@ from frontends._ask_user_common import (
     extract_event,
     start_gc_timer,
 )
+from frontends.voice_input import build_voice_prompt
 
 
 def _ensure_runtime_paths():
@@ -775,7 +776,8 @@ def _describe_media(msg_type, file_path, filename):
     if msg_type == "image":
         return f"[image: {filename}]\n[Image: source: {file_path}]"
     if msg_type == "audio":
-        return f"[audio: {filename}]\n[File: source: {file_path}]"
+        cfg, _ = _load_config()
+        return build_voice_prompt(file_path, cfg, source="feishu")
     if msg_type in ("file", "media"):
         return f"[{msg_type}: {filename}]\n[File: source: {file_path}]"
     return f"[{msg_type}]\n[File: source: {file_path}]"

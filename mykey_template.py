@@ -413,6 +413,50 @@ native_oai_config = {
 # wecom_secret = 'your_bot_secret'
 # wecom_allowed_users = ['your_user_id']            # 留空或 ['*'] 表示允许所有企业微信用户
 # wecom_welcome_message = '你好，我在线上。'
+#
+# 可选：IM 语音输入转写。兼容 OpenAI /audio/transcriptions 协议；不配置时会保留原音频文件提示，不影响文字/图片/文件消息。
+# asr_base_url = 'https://api.openai.com/v1'
+# asr_api_key = 'sk-<your-asr-key>'
+# asr_model = 'whisper-1'
+# asr_language = 'zh'          # 可选
+# asr_timeout = 120            # 可选，秒
+# 也可以写成：
+# asr = {
+#     'provider': 'openai',
+#     'base_url': 'https://api.openai.com/v1',
+#     'api_key': 'sk-<your-asr-key>',
+#     'model': 'whisper-1',
+#     'language': 'zh',
+#     'timeout': 120,
+# }
+#
+# 阿里云百炼/DashScope 原生转写示例。实测 /audio/transcriptions 兼容端点不适用于该批 ASR 模型。
+# 注意：百炼原生接口要求音频是 http(s) 可访问 URL；IM 本地文件需先映射到公网可访问目录或对象存储。
+# `models` 会按 round_robin 动态轮询；某个模型报错/429/额度耗尽时会自动尝试下一个。
+# 依赖：pip install dashscope
+# asr = {
+#     'provider': 'bailian_native',
+#     'api_key': 'sk-<your-dashscope-api-key>',  # 也可使用环境变量 DASHSCOPE_API_KEY
+#     'models': ['paraformer-v2', 'paraformer-v1'],
+#     'language': 'zh',
+#     'rotation': 'round_robin',
+#     'timeout': 120,
+#     # 推荐：本地 IM 音频自动上传到 S3/MinIO 兼容对象存储，再把公网预签名 URL 交给百炼。
+#     'object_store': {
+#         'endpoint': 'http://127.0.0.1:9000',             # G-Agent 所在机器可访问的 MinIO S3 API
+#         'public_endpoint': 'https://audio.example.com',  # 百炼可访问的公网反代地址
+#         'access_key': 'minio-access-key',
+#         'secret_key': 'minio-secret-key',
+#         'bucket': 'g-agent-asr',
+#         'prefix': 'asr',
+#         'region': 'us-east-1',
+#         'expires': 3600,
+#     },
+#     # 备用：将 public_base_path 下的本地音频映射为 public_base_url/<relative-path>
+#     # 'public_base_url': 'https://audio.example.com/g-agent-voice',
+#     # 'public_base_path': '/srv/g-agent-voice',
+# }
+#
 # dingtalk_client_id = 'your_app_key'
 # dingtalk_client_secret = 'your_app_secret'
 # dingtalk_allowed_users = ['your_staff_id']        # 留空或 ['*'] 表示允许所有钉钉用户
