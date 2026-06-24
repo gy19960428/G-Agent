@@ -395,6 +395,10 @@ def _prepare_audio(path):
     ext = path.suffix.lower()
     if ext not in _CONVERT_EXTS:
         return path, None
+    if ext == ".silk":
+        converted = _prepare_silk_audio(path)
+        if converted:
+            return converted
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return path, None
@@ -407,6 +411,21 @@ def _prepare_audio(path):
     except Exception:
         Path(out_name).unlink(missing_ok=True)
         return path, None
+
+
+def _prepare_silk_audio(path):
+    try:
+        import pilk
+    except Exception:
+        return None
+    fd, out_name = tempfile.mkstemp(prefix="g_agent_voice_", suffix=".wav")
+    os.close(fd)
+    try:
+        pilk.silk_to_wav(str(path), out_name, 16000)
+        return Path(out_name), out_name
+    except Exception:
+        Path(out_name).unlink(missing_ok=True)
+        return None
 
 
 def _call_openai_transcription(path, cfg, *, source):
