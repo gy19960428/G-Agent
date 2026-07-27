@@ -1,5 +1,8 @@
-const defaultApi = `${window.location.protocol}//${window.location.hostname}:5000/api`;
-let API_BASE = localStorage.getItem('wms_api_base') || defaultApi;
+const publicApiMap = {
+  'wms.sky-clemon.top': 'https://wmsapi.sky-clemon.top',
+};
+const defaultApi = publicApiMap[window.location.hostname] || `${window.location.protocol}//${window.location.hostname}:5000/api`;
+let API_BASE = publicApiMap[window.location.hostname] || localStorage.getItem('wms_api_base') || defaultApi;
 let currentUser = JSON.parse(localStorage.getItem('wms_user') || 'null');
 let cache = { customers: [], parts: [], products: [], orders: [], boxes: [], areas: [], shipments: [], users: [], settings: {} };
 let shipmentDraft = [];
