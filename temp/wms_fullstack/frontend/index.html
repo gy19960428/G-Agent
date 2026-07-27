@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WMS 管理后台</title>
+  <link rel="stylesheet" href="./styles.css?v=20260728-flow">
+</head>
+<body>
+  <section id="loginPage" class="login-page">
+    <form id="loginForm" class="login-card">
+      <div>
+        <h1>WMS 管理后台</h1>
+        <p>深圳市宝恒源塑胶五金精密有限公司</p>
+      </div>
+      <input id="loginUser" name="username" placeholder="账号" value="admin" required>
+      <input id="loginPass" name="password" type="password" placeholder="密码" value="admin123" required>
+      <button id="loginBtn" type="submit">登录</button>
+      <div class="api-inline">
+        <input id="apiBase" placeholder="API 地址">
+        <button id="saveApi" type="button" class="secondary">保存 API</button>
+      </div>
+      <span class="hint">登录后进入业务后台</span>
+    </form>
+  </section>
+
+  <div id="appShell" class="app-shell hidden">
+    <header class="topbar">
+      <div>
+        <h1>WMS 管理后台</h1>
+        <p>深圳市宝恒源塑胶五金精密有限公司</p>
+      </div>
+      <div class="api-box">
+        <span id="userBadge" class="hint"></span>
+        <button id="logoutBtn" type="button" class="secondary">退出</button>
+        <button id="refreshBtn" type="button">刷新</button>
+      </div>
+    </header>
+
+  <nav class="tabs" id="tabs">
+    <button class="active" data-page="overview" type="button">总览</button>
+    <button data-page="products" type="button">产品</button>
+    <button data-page="packing" type="button">装箱</button>
+    <button data-page="stock" type="button">库存</button>
+    <button data-page="shipments" type="button">出货</button>
+    <div class="tab-group admin-only">
+      <span>信息录入</span>
+      <button data-page="customers" type="button">客户录入</button>
+      <button data-page="parts" type="button">部件录入</button>
+      <button data-page="product-entry" type="button">产品录入</button>
+      <button data-page="orders" type="button">订单录入</button>
+    </div>
+    <button class="admin-only" data-page="settings" type="button">系统设置</button>
+  </nav>
+
+  <main>
+    <section class="page active" id="page-overview">
+      <section class="cards" id="dashboard"></section>
+      <section class="panel">
+        <div class="section-title"><h2>经营总览</h2><input id="overviewKeyword" class="search" placeholder="筛选箱号/订单/产品/部件"></div>
+        <div id="overviewCharts" class="overview-charts"></div>
+      </section>
+    </section>
+
+    <section class="page" id="page-customers">
+      <section class="panel grid-2">
+        <form id="customerForm">
+          <h2>新增客户</h2>
+          <input name="code" placeholder="客户编码，如 LS-001" required>
+          <input name="name" placeholder="客户名称，如 楼上精密电子" required>
+          <input name="contact" placeholder="联系人">
+          <input name="phone" placeholder="电话">
+          <input name="address" placeholder="地址">
+          <input name="remark" placeholder="备注">
+          <button>新增客户</button>
+        </form>
+        <div>
+          <div class="section-title"><h2>客户列表</h2><input id="customerKeyword" class="search" placeholder="搜索客户编码/名称/联系人"></div>
+          <div class="table-wrap"><table id="customersTable"></table></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="page-parts">
+      <section class="panel grid-2">
+        <form id="partForm">
+          <h2>新增部件</h2>
+          <input name="code" placeholder="部件编码，如 PT-001" required>
+          <input name="name" placeholder="部件名称，如 外壳主体" required>
+          <input name="spec" placeholder="规格/型号">
+          <input name="color" placeholder="颜色">
+          <input name="unit" placeholder="单位" value="PCS">
+          <input name="box_capacity" type="number" min="1" placeholder="数量/每箱数量" value="100">
+          <select name="count_method">
+            <option value="count">计数方式：点数</option>
+            <option value="weight">计数方式：称重</option>
+          </select>
+          <input name="remark" placeholder="备注">
+          <button>新增部件</button>
+        </form>
+        <div>
+          <div class="section-title"><h2>部件列表</h2><input id="partKeyword" class="search" placeholder="搜索编码/名称/规格/颜色"></div>
+          <div class="table-wrap"><table id="partsTable"></table></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="page-products">
+      <section class="panel">
+        <div class="section-title"><h2>产品与 BOM</h2><input id="productKeyword" class="search" placeholder="搜索产品/部件"></div>
+        <div class="table-wrap"><table id="productsTable"></table></div>
+      </section>
+    </section>
+
+    <section class="page" id="page-product-entry">
+      <section class="panel">
+        <form id="productForm">
+          <h2>新增产品与 BOM</h2>
+          <input name="code" placeholder="产品编码，如 PRD-001" required>
+          <input name="name" placeholder="产品名称，如 充电器外壳套件" required>
+          <input name="remark" placeholder="备注">
+          <div class="builder-head">
+            <strong>BOM 部件</strong>
+            <button id="addBomRow" type="button" class="secondary">添加部件</button>
+          </div>
+          <div id="bomRows" class="line-rows"></div>
+          <button>新增产品</button>
+        </form>
+      </section>
+    </section>
+
+    <section class="page" id="page-orders">
+      <section class="panel grid-2 wide-left">
+        <form id="orderForm">
+          <h2>新增订单</h2>
+          <select name="customer_id" id="orderCustomer"><option value="">选择客户</option></select>
+          <input name="order_no" placeholder="订单号" required>
+          <input name="due_date" placeholder="交期，如 2026-12-31">
+          <input name="remark" placeholder="备注">
+          <div class="builder-head">
+            <strong>订单明细</strong>
+            <button id="addOrderItemRow" type="button" class="secondary">添加明细</button>
+          </div>
+          <div id="orderItemRows" class="line-rows"></div>
+          <button>新增订单</button>
+        </form>
+        <div>
+          <div class="section-title"><h2>订单列表</h2><input id="orderKeyword" class="search" placeholder="搜索订单号/客户/产品/部件"></div>
+          <div class="table-wrap"><table id="ordersTable"></table></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="page-packing">
+      <section class="panel grid-2">
+        <form id="produceForm">
+          <h2>生产装箱</h2>
+          <select name="part_id" id="producePart" required></select>
+          <input name="qty" type="number" min="1" placeholder="本箱数量；称重部件必填">
+          <input name="box_count" type="number" min="1" max="100" value="1" placeholder="生成箱数，最多 100 箱">
+          <input name="box_no" placeholder="箱号，不填自动生成，如 20260728-QC40-001">
+          <button>生成箱号</button>
+        </form>
+        <div>
+          <div class="section-title"><h2>未打印面签</h2><button id="batchPrintBtn" type="button">批量面签打印</button></div>
+          <div class="table-wrap"><table id="packingBoxesTable"></table></div>
+          <div class="section-title sub-title"><h2>最新 100 条箱号记录</h2><span class="hint">按创建时间倒排</span></div>
+          <div class="table-wrap compact-table"><table id="packingRecentBoxesTable"></table></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="page-stock">
+      <section class="panel">
+        <div class="section-title"><h2>库存入库与查询</h2><a id="exportCsv" target="_blank">导出流水 CSV</a></div>
+        <form id="stockInForm" class="inline-form">
+          <input name="box_no" placeholder="输入/扫描箱号入库" required>
+          <select name="warehouse_area_id" id="stockArea"></select>
+          <button>确认入库</button>
+        </form>
+        <div class="filters">
+          <input id="stockKeyword" placeholder="搜索箱号/订单/产品/部件">
+          <select id="stockStatus">
+            <option value="in_stock">仅库存</option>
+            <option value="packed">已装箱未入库</option>
+            <option value="shipped">已出货</option>
+            <option value="returned">已退回</option>
+            <option value="">全部状态</option>
+          </select>
+        </div>
+        <div class="table-wrap"><table id="boxesTable"></table></div>
+      </section>
+    </section>
+
+    <section class="page" id="page-shipments">
+      <section class="panel grid-2">
+        <div>
+          <h2>出货暂存</h2>
+          <form id="shipScanForm" class="inline-form">
+            <input name="box_no" placeholder="输入/扫描箱号加入暂存" required>
+            <button>加入暂存</button>
+          </form>
+          <form id="shipmentForm">
+            <select name="customer_id" id="shipmentCustomer"><option value="">选择客户</option></select>
+            <input name="shipment_no" placeholder="出货单号，不填自动生成">
+            <input name="remark" placeholder="备注">
+            <div class="row-actions">
+              <button>生成出货单</button>
+              <button id="clearShipmentDraft" type="button" class="secondary">清空暂存</button>
+            </div>
+          </form>
+          <div class="table-wrap compact-table"><table id="shipmentDraftTable"></table></div>
+        </div>
+        <div>
+          <div class="section-title"><h2>出货单列表</h2><input id="shipmentKeyword" class="search" placeholder="搜索出货单/箱号"></div>
+          <div class="table-wrap"><table id="shipmentsTable"></table></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" id="page-settings">
+      <section class="panel grid-2">
+        <form id="settingsForm">
+          <h2>服务器设置</h2>
+          <input name="company_name" placeholder="公司名称">
+          <input name="server_host" placeholder="服务器地址">
+          <input name="server_port" type="number" placeholder="后端端口，如 5000">
+          <button>保存服务器设置</button>
+        </form>
+        <form id="userForm">
+          <h2>人员设置</h2>
+          <input name="username" placeholder="登录账号" required>
+          <input name="password" type="password" placeholder="初始/重置密码" required>
+          <select name="role"><option value="operator">普通人员</option><option value="admin">管理员</option></select>
+          <button>新增人员</button>
+        </form>
+        <div>
+          <div class="section-title"><h2>人员列表</h2></div>
+          <div class="table-wrap"><table id="usersTable"></table></div>
+        </div>
+        <form id="areaForm">
+          <h2>库存区设置</h2>
+          <input name="code" placeholder="库区编码，如 A01" required>
+          <input name="name" placeholder="库区名称" required>
+          <input name="remark" placeholder="备注">
+          <button>新增库区</button>
+        </form>
+        <div>
+          <div class="section-title"><h2>库存区列表</h2></div>
+          <div class="table-wrap"><table id="areasTable"></table></div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="confirmModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="section-title"><h2 id="confirmTitle">二次确认</h2><button id="closeModal" type="button" class="secondary">关闭</button></div>
+      <div id="confirmBody"></div>
+      <div class="row-actions right"><button id="confirmAction" type="button">确认</button></div>
+    </div>
+  </div>
+
+  </div>
+
+  <div id="toast"></div>
+  <script src="./app.js?v=20260728-flow"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/box/box"
+  ],
+  "window": {
+    "navigationBarTitleText": "WMS 扫码端",
+    "navigationBarBackgroundColor": "#2563eb",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f4f6f8"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
