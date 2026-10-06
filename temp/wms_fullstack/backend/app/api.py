@@ -192,14 +192,21 @@ def box_detail_by_no(box_no):
     ''', (box_no,)))
 
 
-def ensure_default_admin():
-    if query_one('SELECT id FROM users WHERE username=?', ('admin',)):
-        return
+def user_count():
+    return query_one('SELECT COUNT(*) AS n FROM users')['n']
+
+
+def create_first_admin(username, password):
+    if not username:
+        raise ValueError('请输入用户名')
+    if not password:
+        raise ValueError('请输入密码')
     execute(
         'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)',
-        ('admin', generate_password_hash('admin123'), 'admin'),
+        (username, generate_password_hash(password), 'admin'),
     )
     get_db().commit()
+    return query_one('SELECT * FROM users WHERE username=? AND active=1', (username,))
 
 
 def public_user(user):
@@ -221,10 +228,14 @@ def next_box_no(part_id):
 @bp.post('/login')
 def login():
     try:
-        ensure_default_admin()
         data = require_json()
         username = str(data.get('username', '')).strip()
         password = str(data.get('password', ''))
+        login_role = str(data.get('login_role', '')).strip()
+        if user_count() == 0:
+            if login_role != 'admin':
+                return fail('系统尚未初始化，请先进入管理员登录页创建首个管理员', 403, 'admin_required_for_bootstrap')
+            return ok({'user': public_user(create_first_admin(username, password))})
         user = query_one('SELECT * FROM users WHERE username=? AND active=1', (username,))
         if not user or not check_password_hash(user['password_hash'], password):
             return fail('用户名或密码错误', 401, 'invalid_credentials')
@@ -235,7 +246,6 @@ def login():
 
 @bp.get('/me')
 def me():
-    ensure_default_admin()
     user = current_user()
     return ok({'user': public_user(user) if user else None})
 

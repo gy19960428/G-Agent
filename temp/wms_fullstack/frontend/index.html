@@ -3,31 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WMS 管理后台</title>
-  <link rel="stylesheet" href="./styles.css?v=20260728-flow">
+  <title>WMS 管理后台 v1.0</title>
+  <link rel="stylesheet" href="./styles.css?v=20260728-menu-wrap-v1">
 </head>
 <body>
   <section id="loginPage" class="login-page">
-    <form id="loginForm" class="login-card">
-      <div>
-        <h1>WMS 管理后台</h1>
-        <p>深圳市宝恒源塑胶五金精密有限公司</p>
-      </div>
-      <input id="loginUser" name="username" placeholder="账号" value="admin" required>
-      <input id="loginPass" name="password" type="password" placeholder="密码" value="admin123" required>
-      <button id="loginBtn" type="submit">登录</button>
-      <div class="api-inline">
-        <input id="apiBase" placeholder="API 地址">
-        <button id="saveApi" type="button" class="secondary">保存 API</button>
-      </div>
-      <span class="hint">登录后进入业务后台</span>
-    </form>
+    <div id="operatorLoginPanel" class="login-panel">
+      <form id="loginForm" class="login-card" data-login-role="operator">
+        <div>
+          <h1>WMS 管理后台 v1.0</h1>
+          <p>普通用户登录</p>
+        </div>
+        <input id="loginUser" name="username" placeholder="普通用户账号" required>
+        <input id="loginPass" name="password" type="password" placeholder="密码" required>
+        <button id="loginBtn" type="submit">普通用户登录</button>
+        <div class="login-switch-row">
+          <span class="hint">管理员账号请进入管理员登录页</span>
+          <button id="showAdminLogin" type="button" class="link-button">管理员登录</button>
+        </div>
+        <div class="api-inline">
+          <input id="apiBase" placeholder="API 地址">
+          <button id="saveApi" type="button" class="secondary">保存 API</button>
+        </div>
+      </form>
+    </div>
+    <div id="adminLoginPanel" class="login-panel hidden">
+      <form id="adminLoginForm" class="login-card admin-card" data-login-role="admin">
+        <div>
+          <h1>WMS 管理后台 v1.0</h1>
+          <p>管理员登录</p>
+        </div>
+        <input id="adminLoginUser" name="username" placeholder="管理员账号" required>
+        <input id="adminLoginPass" name="password" type="password" placeholder="管理员密码" required>
+        <button id="adminLoginBtn" type="submit">管理员登录</button>
+        <div class="login-switch-row">
+          <button id="showOperatorLogin" type="button" class="link-button">返回普通用户登录</button>
+          <span class="hint">管理员进入完整后台</span>
+        </div>
+      </form>
+    </div>
   </section>
 
   <div id="appShell" class="app-shell hidden">
     <header class="topbar">
       <div>
-        <h1>WMS 管理后台</h1>
+        <h1>WMS 管理后台 v1.0</h1>
         <p>深圳市宝恒源塑胶五金精密有限公司</p>
       </div>
       <div class="api-box">
@@ -39,18 +59,27 @@
 
   <nav class="tabs" id="tabs">
     <button class="active" data-page="overview" type="button">总览</button>
-    <button data-page="products" type="button">产品</button>
     <button data-page="packing" type="button">装箱</button>
     <button data-page="stock" type="button">库存</button>
     <button data-page="shipments" type="button">出货</button>
-    <div class="tab-group admin-only">
-      <span>信息录入</span>
-      <button data-page="customers" type="button">客户录入</button>
-      <button data-page="parts" type="button">部件录入</button>
-      <button data-page="product-entry" type="button">产品录入</button>
-      <button data-page="orders" type="button">订单录入</button>
+    <div class="tab-menu admin-only">
+      <button class="tab-menu-toggle" type="button" aria-expanded="false">信息录入</button>
+      <div class="tab-submenu">
+        <button data-page="customers" type="button">客户录入</button>
+        <button data-page="parts" type="button">部件录入</button>
+        <button data-page="products" type="button">产品列表</button>
+        <button data-page="product-entry" type="button">产品录入</button>
+        <button data-page="orders" type="button">订单录入</button>
+      </div>
     </div>
-    <button class="admin-only" data-page="settings" type="button">系统设置</button>
+    <div class="tab-menu admin-only">
+      <button class="tab-menu-toggle" type="button" aria-expanded="false">系统管理</button>
+      <div class="tab-submenu">
+        <button data-page="settings" type="button">服务器设置</button>
+        <button data-page="users" type="button">人员管理</button>
+        <button data-page="areas" type="button">库存区管理</button>
+      </div>
+    </div>
   </nav>
 
   <main>
@@ -219,7 +248,7 @@
     </section>
 
     <section class="page" id="page-settings">
-      <section class="panel grid-2">
+      <section class="panel">
         <form id="settingsForm">
           <h2>服务器设置</h2>
           <input name="company_name" placeholder="公司名称">
@@ -227,6 +256,11 @@
           <input name="server_port" type="number" placeholder="后端端口，如 5000">
           <button>保存服务器设置</button>
         </form>
+      </section>
+    </section>
+
+    <section class="page" id="page-users">
+      <section class="panel grid-2">
         <form id="userForm">
           <h2>人员设置</h2>
           <input name="username" placeholder="登录账号" required>
@@ -238,6 +272,11 @@
           <div class="section-title"><h2>人员列表</h2></div>
           <div class="table-wrap"><table id="usersTable"></table></div>
         </div>
+      </section>
+    </section>
+
+    <section class="page" id="page-areas">
+      <section class="panel grid-2">
         <form id="areaForm">
           <h2>库存区设置</h2>
           <input name="code" placeholder="库区编码，如 A01" required>
@@ -264,6 +303,6 @@
   </div>
 
   <div id="toast"></div>
-  <script src="./app.js?v=20260728-flow"></script>
+  <script src="./app.js?v=20260728-mobile-nav-v1"></script>
 </body>
 </html>

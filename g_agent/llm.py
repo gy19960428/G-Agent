@@ -31,6 +31,7 @@ def _load_mykeys():
 
 
 _mykey_path = _mykey_mtime = None
+_LLM_LOG_LOCK = threading.RLock()
 
 
 def reload_mykeys():
@@ -1448,8 +1449,12 @@ def _write_llm_log(label, content, log_path=None):
         )
     os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_path, "a", encoding="utf-8", errors="replace") as f:
-        f.write(f"=== {label} === {ts}\n{content}\n\n")
+    entry = f"=== {label} === {ts}\n{content}\n\n"
+    with _LLM_LOG_LOCK:
+        with open(log_path, "a", encoding="utf-8", errors="replace") as f:
+            f.write(entry)
+            f.flush()
+            os.fsync(f.fileno())
 
 
 def tryparse(json_str):

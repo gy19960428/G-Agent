@@ -8,6 +8,7 @@
 ```
 repeat可选：daily | weekday | weekly | monthly | once | every_Nh（每N小时）| every_Nd（每N天）
 max_delay_hours（可选，默认6）：超过schedule多少小时后不再触发，防止开机太晚执行过时任务
+注意：`weekly` 是按 done 报告时间冷却约 6 天，不绑定具体星期；若必须“周五 17:30”，用 `daily` 触发并在 prompt/脚本内做周五自检。
 
 ## 触发流程
 1. scheduler.py（reflect/）每60秒轮询 sche_tasks/*.json

@@ -279,11 +279,56 @@ def _extract_element_content(element):
     return parts
 
 
+def _post_element_shapes(content_json):
+    """Return a bounded, value-free outline of rich-text nodes for diagnostics."""
+    shapes = []
+
+    def _walk(value):
+        if len(shapes) >= 32:
+            return
+        if isinstance(value, dict):
+            tag = value.get("tag")
+            if tag:
+                shapes.append({"tag": str(tag), "keys": sorted(str(key) for key in value)[:12]})
+            for child in value.values():
+                _walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                _walk(child)
+
+    _walk(content_json)
+    return shapes
+
+
+def _post_files_from_message_detail(message_id):
+    """Retrieve file metadata that Feishu omits from post event content."""
+    if not message_id:
+        return []
+    try:
+        request = GetMessageRequest.builder().message_id(message_id).build()
+        response = (client or create_client()).im.v1.message.get(request)
+        if not response.success() or not response.data.items:
+            print(f"[FS-POST-FILES] detail unavailable message_id={message_id}", flush=True)
+            return []
+        content = response.data.items[0].body.content
+        if isinstance(content, str):
+            content = json.loads(content)
+        files = content.get("files", []) if isinstance(content, dict) else []
+        return [
+            {"file_key": entry["file_key"], "file_name": entry.get("file_name", "")}
+            for entry in files
+            if isinstance(entry, dict) and entry.get("file_key") and not entry.get("is_folder")
+        ]
+    except Exception as exc:
+        print(f"[FS-POST-FILES] detail lookup failed message_id={message_id}: {exc}", flush=True)
+        return []
+
+
 def _extract_post_content(content_json):
     def _parse_block(block):
         if not isinstance(block, dict) or not isinstance(block.get("content"), list):
-            return None, []
-        texts, images = [], []
+            return None, [], []
+        texts, images, files = [], [], []
         if block.get("title"):
             texts.append(block.get("title"))
         for row in block["content"]:
@@ -299,29 +344,31 @@ def _extract_post_content(content_json):
                     texts.append(f"@{el.get('user_name', 'user')}")
                 elif tag == "img" and el.get("image_key"):
                     images.append(el["image_key"])
+                elif tag == "file" and el.get("file_key"):
+                    files.append({"file_key": el["file_key"], "file_name": el.get("file_name", "")})
         text = " ".join([t for t in texts if t]).strip()
-        return text or None, images
+        return text or None, images, files
 
     root = content_json
     if isinstance(root, dict) and isinstance(root.get("post"), dict):
         root = root["post"]
     if not isinstance(root, dict):
-        return "", []
+        return "", [], []
     if "content" in root:
-        text, imgs = _parse_block(root)
-        if text or imgs:
-            return text or "", imgs
+        text, imgs, files = _parse_block(root)
+        if text or imgs or files:
+            return text or "", imgs, files
     for key in ("zh_cn", "en_us", "ja_jp"):
         if key in root:
-            text, imgs = _parse_block(root[key])
-            if text or imgs:
-                return text or "", imgs
+            text, imgs, files = _parse_block(root[key])
+            if text or imgs or files:
+                return text or "", imgs, files
     for val in root.values():
         if isinstance(val, dict):
-            text, imgs = _parse_block(val)
-            if text or imgs:
-                return text or "", imgs
-    return "", []
+            text, imgs, files = _parse_block(val)
+            if text or imgs or files:
+                return text or "", imgs, files
+    return "", [], []
 
 
 AGENT_TIMEOUT_SEC = int(os.environ.get("FS_AGENT_TIMEOUT_SEC", "3600"))
@@ -829,7 +876,13 @@ def _build_user_message(message):
         if text:
             parts.append(text)
     elif msg_type == "post":
-        text, image_keys = _extract_post_content(content_json)
+        text, image_keys, files = _extract_post_content(content_json)
+        if text and not image_keys and not files:
+            # File metadata can be omitted from post event content but is present in message detail.
+            files = _post_files_from_message_detail(message_id)
+            if not files:
+                # Values are deliberately omitted; this records only the rich-text schema.
+                print(f"[FS-POST-SHAPE] message_id={message_id} nodes={_post_element_shapes(content_json)}", flush=True)
         if text:
             parts.append(text)
         for image_key in image_keys:
@@ -839,6 +892,12 @@ def _build_user_message(message):
                 image_paths.append(file_path)
             else:
                 parts.append("[image: download failed]")
+        for file_data in files:
+            file_path, filename = _download_and_save_media("file", file_data, message_id)
+            if file_path and filename:
+                parts.append(_describe_media("file", file_path, filename))
+            else:
+                parts.append(f"[file: {file_data.get('file_name') or 'download failed'}]")
     elif msg_type in ("image", "audio", "file", "media"):
         file_path, filename = _download_and_save_media(msg_type, content_json, message_id)
         if file_path and filename:
@@ -1052,6 +1111,19 @@ def _make_task_hook(card, task_id, on_final, last_active=None, ask_user_handler=
     return hook
 
 
+def _final_display_from_queue_item(item):
+    """Return frontend-ready final text while preserving raw `done` for files."""
+    if not isinstance(item, dict):
+        return ""
+    final_display = item.get("final_display")
+    if final_display:
+        return str(final_display)
+    for ev in item.get("events") or []:
+        if isinstance(ev, dict) and ev.get("type") == "final" and ev.get("display"):
+            return str(ev["display"])
+    return _display_text(item.get("done", ""))
+
+
 class FeishuApp(AgentChatMixin):
     label, source, split_limit = "Feishu", "feishu", 4000
 
@@ -1140,7 +1212,11 @@ class FeishuApp(AgentChatMixin):
                 except Q.Empty:
                     item = None
                 if item and "done" in item:
-                    await asyncio.to_thread(_finish, item.get("done", ""))
+                    raw_done = item.get("done", "")
+                    display_done = _final_display_from_queue_item(item)
+                    await asyncio.to_thread(card.done, display_done)
+                    await asyncio.to_thread(_send_generated_files, rid, raw_done, receive_id_type)
+                    result["sent"] = True
                     _reason = "done"
                     break
                 if ask_pending[0]:

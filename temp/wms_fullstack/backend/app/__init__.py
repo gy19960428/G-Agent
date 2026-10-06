@@ -36,7 +36,7 @@ def create_app(test_config=None):
         if origin and (allow_all or origin in allowed_origins or lan_origin):
             response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Vary'] = 'Origin'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-WMS-User'
             response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
         return response
 

@@ -14,30 +14,16 @@ _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
-HELP_COMMANDS = (
-    ("/help", "显示帮助"),
-    ("/status", "查看状态"),
-    ("/stop", "停止当前任务"),
-    ("/new", "开启新对话并清空当前上下文"),
-    ("/restore", "恢复上次对话历史"),
-    ("/continue", "列出可恢复会话"),
-    ("/continue [n]", "恢复第 n 个会话"),
-    ("/btw <q>", "side question — 临时插问主 agent 进展，不打断主线"),
-    ("/review [scope]", "in-session code review; 默认审当前 git diff"),
-    ("/llm", "查看当前模型列表"),
-    ("/llm [n]", "切换到第 n 个模型"),
+from g_agent.command_dispatch import (
+    command_op,
+    frontend_help_commands,
+    is_supported_frontend_command,
+    normalize_command,
+    telegram_menu_commands,
 )
-TELEGRAM_MENU_COMMANDS = (
-    ("help", "显示帮助"),
-    ("status", "查看状态"),
-    ("stop", "停止当前任务"),
-    ("new", "开启新对话并清空当前上下文"),
-    ("restore", "恢复上次对话历史"),
-    ("continue", "列出可恢复会话；/continue n 恢复第 n 个"),
-    ("btw", "临时插问主 agent 进展，不打断主线"),
-    ("review", "in-session code review；/review scope 指定范围"),
-    ("llm", "查看模型列表；/llm n 切换到指定模型"),
-)
+
+HELP_COMMANDS = frontend_help_commands()
+TELEGRAM_MENU_COMMANDS = telegram_menu_commands()
 
 
 def build_help_text(commands=HELP_COMMANDS):
@@ -298,19 +284,8 @@ def allowed_label(allowed):
     return "public" if public_access(allowed) else sorted(allowed)
 
 
-def normalize_command(cmd):
-    return (cmd or "").strip()
-
-
 def is_supported_command(cmd):
-    cmd = normalize_command(cmd)
-    if not cmd.startswith("/"):
-        return False
-    return bool(
-        re.fullmatch(r"/(?:help|stop|status|restore|new)", cmd)
-        or re.fullmatch(r"/continue(?:\s+\d+)?", cmd)
-        or re.fullmatch(r"/llm(?:\s+\d+)?", cmd)
-    )
+    return is_supported_frontend_command(cmd)
 
 
 def ensure_single_instance(port, label):

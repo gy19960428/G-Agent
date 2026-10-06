@@ -2,7 +2,15 @@ const publicApiMap = {
   'wms.sky-clemon.top': 'https://wmsapi.sky-clemon.top',
 };
 const defaultApi = publicApiMap[window.location.hostname] || `${window.location.protocol}//${window.location.hostname}:5000/api`;
-let API_BASE = publicApiMap[window.location.hostname] || localStorage.getItem('wms_api_base') || defaultApi;
+function normalizeApiBase(value) {
+  let base = (value || defaultApi).trim().replace(/\/$/, '');
+  if (base === 'https://wmsapi.sky-clemon.top/api') base = 'https://wmsapi.sky-clemon.top';
+  return base;
+}
+let API_BASE = normalizeApiBase(publicApiMap[window.location.hostname] || localStorage.getItem('wms_api_base'));
+if (publicApiMap[window.location.hostname] && localStorage.getItem('wms_api_base') !== API_BASE) {
+  localStorage.setItem('wms_api_base', API_BASE);
+}
 let currentUser = JSON.parse(localStorage.getItem('wms_user') || 'null');
 let cache = { customers: [], parts: [], products: [], orders: [], boxes: [], areas: [], shipments: [], users: [], settings: {} };
 let shipmentDraft = [];
@@ -24,7 +32,12 @@ function toast(message, isError = false) {
 async function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (currentUser?.username) headers['X-WMS-User'] = currentUser.username;
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch (err) {
+    throw new Error(`无法连接 API：${API_BASE}，请检查公网反代或 API 地址`);
+  }
   const contentType = res.headers.get('content-type') || '';
   const payload = contentType.includes('application/json') ? await res.json() : await res.text();
   if (!res.ok || payload.ok === false) {
@@ -493,9 +506,26 @@ function initEvents() {
   $('#exportCsv').href = `${API_BASE}/stock-moves.csv`;
 
   $('#tabs').addEventListener('click', (e) => {
+    const toggle = e.target.closest('.tab-menu-toggle');
+    if (toggle) {
+      const menu = toggle.closest('.tab-menu');
+      const shouldOpen = !menu.classList.contains('open');
+      $$('.tab-menu').forEach((item) => {
+        item.classList.remove('open');
+        item.querySelector('.tab-menu-toggle')?.setAttribute('aria-expanded', 'false');
+      });
+      menu.classList.toggle('open', shouldOpen);
+      toggle.setAttribute('aria-expanded', String(shouldOpen));
+      return;
+    }
+
     const btn = e.target.closest('button[data-page]');
     if (!btn) return;
     $$('#tabs button').forEach((node) => node.classList.toggle('active', node === btn));
+    $$('.tab-menu').forEach((item) => {
+      item.classList.remove('open');
+      item.querySelector('.tab-menu-toggle')?.setAttribute('aria-expanded', 'false');
+    });
     $$('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${btn.dataset.page}`));
   });
 
@@ -508,13 +538,32 @@ function initEvents() {
     toast('API 地址已保存');
   });
   $('#refreshBtn').addEventListener('click', () => loadAll().then(() => toast('已刷新')).catch((err) => toast(err.message, true)));
+  const showLoginPanel = (role) => {
+    $('#operatorLoginPanel').classList.toggle('hidden', role === 'admin');
+    $('#adminLoginPanel').classList.toggle('hidden', role !== 'admin');
+  };
+  $('#showAdminLogin').addEventListener('click', () => showLoginPanel('admin'));
+  $('#showOperatorLogin').addEventListener('click', () => showLoginPanel('operator'));
+  const submitLogin = async ({ role, username, password }) => {
+    const data = await api('/login', { method: 'POST', body: JSON.stringify({ username, password, login_role: role }) });
+    const user = data.user || data;
+    if (role === 'admin' && user.role !== 'admin') throw new Error('请使用管理员账号登录');
+    if (role !== 'admin' && user.role === 'admin') throw new Error('管理员请进入管理员登录页');
+    currentUser = user;
+    localStorage.setItem('wms_user', JSON.stringify(currentUser));
+    await loadAll();
+    toast(role === 'admin' ? '管理员登录成功' : '普通用户登录成功');
+  };
   $('#loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      currentUser = await api('/login', { method: 'POST', body: JSON.stringify({ username: $('#loginUser').value.trim(), password: $('#loginPass').value }) });
-      localStorage.setItem('wms_user', JSON.stringify(currentUser));
-      await loadAll();
-      toast('登录成功');
+      await submitLogin({ role: 'operator', username: $('#loginUser').value.trim(), password: $('#loginPass').value });
+    } catch (err) { toast(err.message, true); }
+  });
+  $('#adminLoginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await submitLogin({ role: 'admin', username: $('#adminLoginUser').value.trim(), password: $('#adminLoginPass').value });
     } catch (err) { toast(err.message, true); }
   });
   $('#logoutBtn').addEventListener('click', () => {
